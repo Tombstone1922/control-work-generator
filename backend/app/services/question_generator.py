@@ -8,14 +8,20 @@ QUESTION_TEMPLATES = {
         "Раскройте сущность темы: {topic}.",
         "Объясните основные понятия и принципы, связанные с темой: {topic}.",
         "Опишите практическое значение темы: {topic}.",
+        "Сформулируйте основные положения темы: {topic} и приведите пример.",
+        "Проанализируйте значение темы: {topic} для освоения дисциплины.",
     ],
     "test": [
         "Выберите корректное утверждение по теме: {topic}.",
         "Какое из перечисленных положений относится к теме: {topic}?",
+        "Определите верное описание ключевого понятия по теме: {topic}.",
+        "Укажите вариант, который наиболее точно раскрывает содержание темы: {topic}.",
     ],
     "practice": [
         "Решите практическую задачу, связанную с темой: {topic}.",
         "Приведите пример применения темы: {topic} в учебной или профессиональной ситуации.",
+        "Разберите прикладную ситуацию, в которой используется тема: {topic}.",
+        "Составьте краткий алгоритм решения задачи по теме: {topic}.",
     ],
 }
 
@@ -36,22 +42,51 @@ def generate_variants(
         for index in range(questions_per_variant):
             topic = safe_topics[(index + variant_number - 1) % len(safe_topics)]
             question_type = safe_types[index % len(safe_types)]
-            templates = QUESTION_TEMPLATES.get(question_type, QUESTION_TEMPLATES["open"])
-            template = templates[(index + variant_number - 1) % len(templates)]
-
             questions.append(
-                Question(
-                    id=str(uuid4()),
+                generate_question(
                     topic=topic,
-                    text=_adapt_by_difficulty(template.format(topic=topic), difficulty),
-                    type=question_type,
+                    question_type=question_type,
                     difficulty=difficulty,
+                    seed=index + variant_number - 1,
                 )
             )
 
         variants.append(ControlWorkVariant(variant_number=variant_number, questions=questions))
 
     return variants
+
+
+def generate_question(
+    topic: str,
+    question_type: str,
+    difficulty: str,
+    seed: int = 0,
+    avoid_texts: list[str] | None = None,
+) -> Question:
+    templates = QUESTION_TEMPLATES.get(question_type, QUESTION_TEMPLATES["open"])
+    avoid = {text.lower().strip() for text in (avoid_texts or [])}
+
+    selected_text = ""
+    for offset in range(len(templates)):
+        template = templates[(seed + offset) % len(templates)]
+        candidate = _adapt_by_difficulty(template.format(topic=topic), difficulty)
+        if candidate.lower().strip() not in avoid:
+            selected_text = candidate
+            break
+
+    if not selected_text:
+        selected_text = _adapt_by_difficulty(
+            f"Сформулируйте развернутый ответ по теме: {topic}.",
+            difficulty,
+        )
+
+    return Question(
+        id=str(uuid4()),
+        topic=topic,
+        text=selected_text,
+        type=question_type,
+        difficulty=difficulty,
+    )
 
 
 def _adapt_by_difficulty(text: str, difficulty: str) -> str:

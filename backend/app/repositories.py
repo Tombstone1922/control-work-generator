@@ -97,3 +97,23 @@ def get_generation(db: Session, session_id: str) -> GenerationResponse | None:
 def list_generations(db: Session) -> list[GenerationResponse]:
     entities = db.scalars(select(models.GenerationSession).order_by(models.GenerationSession.created_at.desc())).all()
     return [generation_to_schema(entity) for entity in entities]
+
+
+def update_generation_variants(
+    db: Session,
+    session_id: str,
+    variants: list[ControlWorkVariant],
+    report: QualityReport,
+) -> GenerationResponse | None:
+    entity = db.get(models.GenerationSession, session_id)
+    if entity is None:
+        return None
+
+    entity.variants_json = _dump([variant.model_dump() for variant in variants])
+    entity.recommendations_json = _dump(report.recommendations)
+    entity.topic_coverage = report.topic_coverage
+    entity.duplicate_rate = report.duplicate_rate
+    entity.total_questions = report.total_questions
+    db.commit()
+    db.refresh(entity)
+    return generation_to_schema(entity)

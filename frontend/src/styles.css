@@ -18,7 +18,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -102,13 +103,30 @@ h3 {
   box-shadow: 0 0 0 6px rgba(36, 161, 72, 0.13);
 }
 
-.alert {
+.alert,
+.success,
+.notice {
   margin: 16px 0;
   padding: 14px 18px;
+  border-radius: 16px;
+}
+
+.alert {
   border: 1px solid #ffd5d5;
   background: #fff1f1;
   color: #9a1c1c;
-  border-radius: 16px;
+}
+
+.success {
+  border: 1px solid #cdebd4;
+  background: #effaf2;
+  color: #1d6b35;
+}
+
+.notice {
+  border: 1px solid #f5dc9b;
+  background: #fff8e5;
+  color: #7a560d;
 }
 
 .grid {
@@ -126,7 +144,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid #cfd8ea;
   border-radius: 14px;
@@ -136,8 +155,15 @@ select {
   outline: none;
 }
 
+textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: #5d7fd8;
   box-shadow: 0 0 0 4px rgba(93, 127, 216, 0.12);
 }
@@ -148,7 +174,8 @@ select:focus {
 
 .primary,
 .download,
-.secondary {
+.secondary,
+.danger {
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -169,10 +196,30 @@ select:focus {
   color: #3858d6;
 }
 
+.danger {
+  min-height: 36px;
+  padding: 0 12px;
+  background: #fff1f1;
+  color: #a62424;
+  border: 1px solid #ffd0d0;
+}
+
 .primary:disabled,
 .secondary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.disabledLink {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.actionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .columns {
@@ -297,6 +344,27 @@ select:focus {
   margin-top: 12px;
 }
 
+.editorQuestion {
+  padding: 14px;
+  border: 1px solid #e2e8f5;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.questionTopline {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.miniGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+}
+
 .question p {
   margin: 7px 0 4px;
   color: #5d687e;
@@ -308,7 +376,8 @@ select:focus {
 
 @media (max-width: 860px) {
   .hero,
-  .sectionHeader {
+  .sectionHeader,
+  .questionTopline {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -317,11 +386,16 @@ select:focus {
   .columns,
   .quality,
   .variants,
-  .historyGrid {
+  .historyGrid,
+  .miniGrid {
     grid-template-columns: 1fr;
   }
 
   .statusBox {
     min-width: auto;
+  }
+
+  .actionGroup {
+    justify-content: flex-start;
   }
 }

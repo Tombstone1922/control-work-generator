@@ -20,7 +20,10 @@ function App() {
   const [isUploading, setUploading] = useState(false);
   const [isGenerating, setGenerating] = useState(false);
   const [isHistoryLoading, setHistoryLoading] = useState(false);
+  const [isSaving, setSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const exportUrl = useMemo(() => {
     if (!generation?.session_id) return '';
@@ -55,8 +58,10 @@ function App() {
     }
 
     setError('');
+    setSuccess('');
     setUploading(true);
     setGeneration(null);
+    setHasUnsavedChanges(false);
 
     try {
       const formData = new FormData();
@@ -66,6 +71,7 @@ function App() {
       });
       setProgram(response.data);
       await loadHistory();
+      setSuccess('РПД успешно загружена и проанализирована.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось загрузить и проанализировать РПД.');
     } finally {
@@ -80,7 +86,9 @@ function App() {
     }
 
     setError('');
+    setSuccess('');
     setGenerating(true);
+    setHasUnsavedChanges(false);
 
     try {
       const response = await axios.post(`${API_URL}/api/generation/run`, {
@@ -89,6 +97,7 @@ function App() {
       });
       setGeneration(response.data);
       await loadHistory();
+      setSuccess('Контрольная работа сформирована.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось выполнить генерацию.');
     } finally {
@@ -98,10 +107,12 @@ function App() {
 
   async function openProgram(programId) {
     setError('');
+    setSuccess('');
     try {
       const response = await axios.get(`${API_URL}/api/programs/${programId}`);
       setProgram(response.data);
       setGeneration(null);
+      setHasUnsavedChanges(false);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть РПД из истории.');
     }
@@ -109,19 +120,78 @@ function App() {
 
   async function openGeneration(sessionId) {
     setError('');
+    setSuccess('');
     try {
       const response = await axios.get(`${API_URL}/api/generation/${sessionId}`);
       setGeneration(response.data);
       const programResponse = await axios.get(`${API_URL}/api/programs/${response.data.program_id}`);
       setProgram(programResponse.data);
+      setHasUnsavedChanges(false);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть генерацию из истории.');
+    }
+  }
+
+  async function saveEditedGeneration() {
+    if (!generation?.session_id) return;
+    setError('');
+    setSuccess('');
+    setSaving(true);
+
+    try {
+      const response = await axios.put(`${API_URL}/api/generation/${generation.session_id}`, {
+        variants: generation.variants,
+      });
+      setGeneration(response.data);
+      setHasUnsavedChanges(false);
+      await loadHistory();
+      setSuccess('Изменения сохранены. Отчет качества пересчитан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось сохранить изменения.');
+    } finally {
+      setSaving(false);
     }
   }
 
   function updateQuestionTypes(value) {
     const types = value.split(',').map((item) => item.trim()).filter(Boolean);
     setParams((current) => ({ ...current, question_types: types.length ? types : ['open'] }));
+  }
+
+  function updateQuestion(variantNumber, questionId, field, value) {
+    setGeneration((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        variants: current.variants.map((variant) => {
+          if (variant.variant_number !== variantNumber) return variant;
+          return {
+            ...variant,
+            questions: variant.questions.map((question) => (
+              question.id === questionId ? { ...question, [field]: value } : question
+            )),
+          };
+        }),
+      };
+    });
+    setHasUnsavedChanges(true);
+  }
+
+  function deleteQuestion(variantNumber, questionId) {
+    setGeneration((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        variants: current.variants.map((variant) => {
+          if (variant.variant_number !== variantNumber) return variant;
+          return {
+            ...variant,
+            questions: variant.questions.filter((question) => question.id !== questionId),
+          };
+        }),
+      };
+    });
+    setHasUnsavedChanges(true);
   }
 
   return (
@@ -141,6 +211,7 @@ function App() {
       </section>
 
       {error && <div className="alert">{error}</div>}
+      {success && <div className="success">{success}</div>}
 
       <section className="grid">
         <form className="card" onSubmit={uploadProgram}>
@@ -258,9 +329,25 @@ function App() {
       {generation && (
         <section className="card">
           <div className="sectionHeader">
-            <h2>Сформированная контрольная работа</h2>
-            <a className="download" href={exportUrl}>Скачать DOCX</a>
+            <div>
+              <h2>Сформированная контрольная работа</h2>
+              <p className="muted">
+                Можно отредактировать текст, тему, тип и уровень сложности заданий, затем сохранить изменения и экспортировать DOCX.
+              </p>
+            </div>
+            <div className="actionGroup">
+              <button className="secondary" type="button" onClick={saveEditedGeneration} disabled={isSaving || !hasUnsavedChanges}>
+                {isSaving ? 'Сохраняем...' : 'Сохранить изменения'}
+              </button>
+              <a className={`download ${hasUnsavedChanges ? 'disabledLink' : ''}`} href={hasUnsavedChanges ? undefined : exportUrl}>
+                Скачать DOCX
+              </a>
+            </div>
           </div>
+
+          {hasUnsavedChanges && (
+            <div className="notice">Есть несохраненные изменения. Сначала сохраните их, чтобы DOCX экспортировался с актуальными заданиями.</div>
+          )}
 
           <div className="quality">
             <div><strong>{generation.quality_report.topic_coverage}</strong><span>Покрытие тем</span></div>
@@ -278,10 +365,51 @@ function App() {
               <article className="variant" key={variant.variant_number}>
                 <h3>Вариант {variant.variant_number}</h3>
                 {variant.questions.map((question, index) => (
-                  <div className="question" key={question.id}>
-                    <b>{index + 1}. {question.text}</b>
-                    <p>Тема: {question.topic}</p>
-                    <small>Тип: {question.type}; сложность: {question.difficulty}</small>
+                  <div className="question editorQuestion" key={question.id}>
+                    <div className="questionTopline">
+                      <strong>Задание {index + 1}</strong>
+                      <button className="danger" type="button" onClick={() => deleteQuestion(variant.variant_number, question.id)}>
+                        Удалить
+                      </button>
+                    </div>
+                    <label>
+                      Текст задания
+                      <textarea
+                        value={question.text}
+                        onChange={(event) => updateQuestion(variant.variant_number, question.id, 'text', event.target.value)}
+                      />
+                    </label>
+                    <div className="miniGrid">
+                      <label>
+                        Тема
+                        <input
+                          value={question.topic}
+                          onChange={(event) => updateQuestion(variant.variant_number, question.id, 'topic', event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Тип
+                        <select
+                          value={question.type}
+                          onChange={(event) => updateQuestion(variant.variant_number, question.id, 'type', event.target.value)}
+                        >
+                          <option value="open">open</option>
+                          <option value="test">test</option>
+                          <option value="practice">practice</option>
+                        </select>
+                      </label>
+                      <label>
+                        Сложность
+                        <select
+                          value={question.difficulty}
+                          onChange={(event) => updateQuestion(variant.variant_number, question.id, 'difficulty', event.target.value)}
+                        >
+                          <option value="easy">easy</option>
+                          <option value="medium">medium</option>
+                          <option value="hard">hard</option>
+                        </select>
+                      </label>
+                    </div>
                   </div>
                 ))}
               </article>

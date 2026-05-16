@@ -5,3 +5,4 @@ python-docx==1.1.2
 pydantic==2.10.5
 pydantic-settings==2.7.1
 PyMuPDF==1.25.2
+SQLAlchemy==2.0.36

@@ -204,8 +204,15 @@ textarea:focus {
   border: 1px solid #ffd0d0;
 }
 
+.smallButton {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
 .primary:disabled,
-.secondary:disabled {
+.secondary:disabled,
+.danger:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -215,7 +222,8 @@ textarea:focus {
   pointer-events: none;
 }
 
-.actionGroup {
+.actionGroup,
+.questionActions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -395,7 +403,8 @@ textarea:focus {
     min-width: auto;
   }
 
-  .actionGroup {
+  .actionGroup,
+  .questionActions {
     justify-content: flex-start;
   }
 }

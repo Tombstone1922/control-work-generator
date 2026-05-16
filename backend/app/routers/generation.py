@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.repositories import get_generation as repo_get_generation
 from app.repositories import get_program as repo_get_program
-from app.repositories import list_generations, save_generation
-from app.schemas import GenerationRequest, GenerationResponse
+from app.repositories import list_generations, save_generation, update_generation_variants
+from app.schemas import GenerationRequest, GenerationResponse, GenerationUpdateRequest
 from app.services.question_generator import generate_variants
 from app.services.quality_checker import build_quality_report
 
@@ -50,3 +50,24 @@ def get_generation(session_id: str, db: Session = Depends(get_db)) -> Generation
     if generation is None:
         raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
     return generation
+
+
+@router.put("/{session_id}", response_model=GenerationResponse)
+def update_generation(
+    session_id: str,
+    payload: GenerationUpdateRequest,
+    db: Session = Depends(get_db),
+) -> GenerationResponse:
+    generation = repo_get_generation(db, session_id)
+    if generation is None:
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+
+    program = repo_get_program(db, generation.program_id)
+    if program is None:
+        raise HTTPException(status_code=404, detail="Связанная РПД не найдена.")
+
+    report = build_quality_report(payload.variants, program.topics)
+    updated = update_generation_variants(db, session_id, payload.variants, report)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+    return updated

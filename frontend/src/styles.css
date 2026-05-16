@@ -34,6 +34,7 @@ select {
   border-radius: 24px;
   padding: 24px;
   box-shadow: 0 18px 50px rgba(50, 66, 104, 0.09);
+  margin-bottom: 20px;
 }
 
 .hero {
@@ -41,7 +42,6 @@ select {
   justify-content: space-between;
   gap: 24px;
   align-items: center;
-  margin-bottom: 20px;
 }
 
 .eyebrow {
@@ -147,7 +147,8 @@ select:focus {
 }
 
 .primary,
-.download {
+.download,
+.secondary {
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -162,7 +163,14 @@ select:focus {
   cursor: pointer;
 }
 
-.primary:disabled {
+.secondary {
+  border: 1px solid #cfd8ea;
+  background: #fff;
+  color: #3858d6;
+}
+
+.primary:disabled,
+.secondary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -190,6 +198,57 @@ select:focus {
   align-items: center;
   gap: 16px;
   margin-bottom: 18px;
+}
+
+.historyCard {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
+.historyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.historyColumn {
+  border: 1px solid #e0e6f0;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+}
+
+.historyItems {
+  display: grid;
+  gap: 10px;
+}
+
+.historyItem {
+  width: 100%;
+  border: 1px solid #dfe6f5;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f8faff;
+  color: #172033;
+  cursor: pointer;
+  text-align: left;
+  transition: 0.15s ease;
+}
+
+.historyItem:hover {
+  transform: translateY(-1px);
+  border-color: #9db0eb;
+  box-shadow: 0 10px 24px rgba(56, 88, 214, 0.11);
+}
+
+.historyItem strong,
+.historyItem span {
+  display: block;
+}
+
+.historyItem span {
+  margin-top: 4px;
+  color: #66728a;
+  font-size: 13px;
 }
 
 .quality {
@@ -257,7 +316,8 @@ select:focus {
   .grid,
   .columns,
   .quality,
-  .variants {
+  .variants,
+  .historyGrid {
     grid-template-columns: 1fr;
   }
 

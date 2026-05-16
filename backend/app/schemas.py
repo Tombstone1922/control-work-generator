@@ -46,5 +46,9 @@ class GenerationResponse(BaseModel):
     quality_report: QualityReport
 
 
+class GenerationUpdateRequest(BaseModel):
+    variants: List[ControlWorkVariant]
+
+
 class ErrorResponse(BaseModel):
     detail: str

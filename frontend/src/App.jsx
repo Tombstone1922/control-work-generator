@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 const API_URL = 'http://127.0.0.1:8000';
@@ -14,15 +14,38 @@ function App() {
   const [file, setFile] = useState(null);
   const [program, setProgram] = useState(null);
   const [generation, setGeneration] = useState(null);
+  const [programsHistory, setProgramsHistory] = useState([]);
+  const [generationsHistory, setGenerationsHistory] = useState([]);
   const [params, setParams] = useState(defaultGenerationParams);
   const [isUploading, setUploading] = useState(false);
   const [isGenerating, setGenerating] = useState(false);
+  const [isHistoryLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
 
   const exportUrl = useMemo(() => {
     if (!generation?.session_id) return '';
     return `${API_URL}/api/export/docx/${generation.session_id}`;
   }, [generation]);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const [programsResponse, generationsResponse] = await Promise.all([
+        axios.get(`${API_URL}/api/programs/`),
+        axios.get(`${API_URL}/api/generation/`),
+      ]);
+      setProgramsHistory(programsResponse.data);
+      setGenerationsHistory(generationsResponse.data);
+    } catch (err) {
+      console.warn('Не удалось загрузить историю:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function uploadProgram(event) {
     event.preventDefault();
@@ -42,6 +65,7 @@ function App() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setProgram(response.data);
+      await loadHistory();
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось загрузить и проанализировать РПД.');
     } finally {
@@ -64,10 +88,34 @@ function App() {
         ...params,
       });
       setGeneration(response.data);
+      await loadHistory();
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось выполнить генерацию.');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function openProgram(programId) {
+    setError('');
+    try {
+      const response = await axios.get(`${API_URL}/api/programs/${programId}`);
+      setProgram(response.data);
+      setGeneration(null);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось открыть РПД из истории.');
+    }
+  }
+
+  async function openGeneration(sessionId) {
+    setError('');
+    try {
+      const response = await axios.get(`${API_URL}/api/generation/${sessionId}`);
+      setGeneration(response.data);
+      const programResponse = await axios.get(`${API_URL}/api/programs/${response.data.program_id}`);
+      setProgram(programResponse.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось открыть генерацию из истории.');
     }
   }
 
@@ -156,6 +204,46 @@ function App() {
         </section>
       </section>
 
+      <section className="card historyCard">
+        <div className="sectionHeader">
+          <div>
+            <h2>История работы</h2>
+            <p className="muted">РПД и сеансы генерации сохраняются в SQLite и доступны после перезапуска backend.</p>
+          </div>
+          <button className="secondary" type="button" onClick={loadHistory} disabled={isHistoryLoading}>
+            {isHistoryLoading ? 'Обновляем...' : 'Обновить историю'}
+          </button>
+        </div>
+        <div className="historyGrid">
+          <HistoryList
+            title="Загруженные РПД"
+            emptyText="История РПД пока пустая"
+            items={programsHistory}
+            getKey={(item) => item.program_id}
+            renderItem={(item) => (
+              <>
+                <strong>{item.filename}</strong>
+                <span>{item.topics.length} тем · {item.competencies.length} компетенций</span>
+              </>
+            )}
+            onOpen={(item) => openProgram(item.program_id)}
+          />
+          <HistoryList
+            title="Сеансы генерации"
+            emptyText="История генераций пока пустая"
+            items={generationsHistory}
+            getKey={(item) => item.session_id}
+            renderItem={(item) => (
+              <>
+                <strong>{item.session_id.slice(0, 8)}...</strong>
+                <span>{item.quality_report.total_questions} заданий · покрытие {item.quality_report.topic_coverage}</span>
+              </>
+            )}
+            onOpen={(item) => openGeneration(item.session_id)}
+          />
+        </div>
+      </section>
+
       {program && (
         <section className="card">
           <h2>Результаты анализа РПД</h2>
@@ -215,6 +303,25 @@ function List({ title, items }) {
         </ul>
       ) : (
         <p className="muted">Не найдено</p>
+      )}
+    </div>
+  );
+}
+
+function HistoryList({ title, emptyText, items, getKey, renderItem, onOpen }) {
+  return (
+    <div className="historyColumn">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="historyItems">
+          {items.slice(0, 8).map((item) => (
+            <button className="historyItem" key={getKey(item)} type="button" onClick={() => onOpen(item)}>
+              {renderItem(item)}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">{emptyText}</p>
       )}
     </div>
   );

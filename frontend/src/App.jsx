@@ -21,6 +21,7 @@ function App() {
   const [isGenerating, setGenerating] = useState(false);
   const [isHistoryLoading, setHistoryLoading] = useState(false);
   const [isSaving, setSaving] = useState(false);
+  const [regeneratingQuestionId, setRegeneratingQuestionId] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -150,6 +151,29 @@ function App() {
       setError(err.response?.data?.detail || 'Не удалось сохранить изменения.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function regenerateQuestion(questionId) {
+    if (!generation?.session_id) return;
+    if (hasUnsavedChanges) {
+      setError('Сначала сохраните текущие ручные изменения, затем выполните повторную генерацию задания.');
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+    setRegeneratingQuestionId(questionId);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/generation/${generation.session_id}/regenerate-question/${questionId}`);
+      setGeneration(response.data);
+      await loadHistory();
+      setSuccess('Задание перегенерировано. Отчет качества пересчитан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось перегенерировать задание.');
+    } finally {
+      setRegeneratingQuestionId(null);
     }
   }
 
@@ -368,9 +392,19 @@ function App() {
                   <div className="question editorQuestion" key={question.id}>
                     <div className="questionTopline">
                       <strong>Задание {index + 1}</strong>
-                      <button className="danger" type="button" onClick={() => deleteQuestion(variant.variant_number, question.id)}>
-                        Удалить
-                      </button>
+                      <div className="questionActions">
+                        <button
+                          className="secondary smallButton"
+                          type="button"
+                          onClick={() => regenerateQuestion(question.id)}
+                          disabled={regeneratingQuestionId === question.id || hasUnsavedChanges}
+                        >
+                          {regeneratingQuestionId === question.id ? 'Генерируем...' : 'Перегенерировать'}
+                        </button>
+                        <button className="danger" type="button" onClick={() => deleteQuestion(variant.variant_number, question.id)}>
+                          Удалить
+                        </button>
+                      </div>
                     </div>
                     <label>
                       Текст задания

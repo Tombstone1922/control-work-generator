@@ -3,11 +3,17 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import models
 from app.database import get_db
-from app.repositories import get_generation as repo_get_generation
-from app.repositories import get_program as repo_get_program
-from app.repositories import list_generations, save_generation, update_generation_variants
+from app.repositories import (
+    get_generation_for_user,
+    get_program_for_user,
+    list_generations_for_user,
+    save_generation,
+    update_generation_variants,
+)
 from app.schemas import GenerationRequest, GenerationResponse, GenerationUpdateRequest
+from app.security import get_current_user
 from app.services.question_generator import generate_question, generate_variants
 from app.services.quality_checker import build_quality_report
 
@@ -15,10 +21,14 @@ router = APIRouter(prefix="/api/generation", tags=["generation"])
 
 
 @router.post("/run", response_model=GenerationResponse)
-def run_generation(payload: GenerationRequest, db: Session = Depends(get_db)) -> GenerationResponse:
-    program = repo_get_program(db, payload.program_id)
+def run_generation(
+    payload: GenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> GenerationResponse:
+    program = get_program_for_user(db, payload.program_id, current_user)
     if program is None:
-        raise HTTPException(status_code=404, detail="РПД не найдена. Сначала загрузите документ.")
+        raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
 
     variants = generate_variants(
         topics=program.topics,
@@ -40,15 +50,22 @@ def run_generation(payload: GenerationRequest, db: Session = Depends(get_db)) ->
 
 
 @router.get("/", response_model=list[GenerationResponse])
-def get_generations(db: Session = Depends(get_db)) -> list[GenerationResponse]:
-    return list_generations(db)
+def get_generations(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[GenerationResponse]:
+    return list_generations_for_user(db, current_user)
 
 
 @router.get("/{session_id}", response_model=GenerationResponse)
-def get_generation(session_id: str, db: Session = Depends(get_db)) -> GenerationResponse:
-    generation = repo_get_generation(db, session_id)
+def get_generation(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> GenerationResponse:
+    generation = get_generation_for_user(db, session_id, current_user)
     if generation is None:
-        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
     return generation
 
 
@@ -57,14 +74,15 @@ def update_generation(
     session_id: str,
     payload: GenerationUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ) -> GenerationResponse:
-    generation = repo_get_generation(db, session_id)
+    generation = get_generation_for_user(db, session_id, current_user)
     if generation is None:
-        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
 
-    program = repo_get_program(db, generation.program_id)
+    program = get_program_for_user(db, generation.program_id, current_user)
     if program is None:
-        raise HTTPException(status_code=404, detail="Связанная РПД не найдена.")
+        raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
 
     report = build_quality_report(payload.variants, program.topics)
     updated = update_generation_variants(db, session_id, payload.variants, report)
@@ -78,14 +96,15 @@ def regenerate_question(
     session_id: str,
     question_id: str,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ) -> GenerationResponse:
-    generation = repo_get_generation(db, session_id)
+    generation = get_generation_for_user(db, session_id, current_user)
     if generation is None:
-        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
 
-    program = repo_get_program(db, generation.program_id)
+    program = get_program_for_user(db, generation.program_id, current_user)
     if program is None:
-        raise HTTPException(status_code=404, detail="Связанная РПД не найдена.")
+        raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
 
     question_found = False
     all_texts = [

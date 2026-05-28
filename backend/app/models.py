@@ -1,9 +1,23 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(500), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="teacher")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    programs: Mapped[list["Program"]] = relationship(back_populates="owner")
 
 
 class Program(Base):
@@ -16,8 +30,10 @@ class Program(Base):
     topics_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     competencies_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     learning_outcomes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
+    owner: Mapped[User | None] = relationship(back_populates="programs")
     generations: Mapped[list["GenerationSession"]] = relationship(
         back_populates="program",
         cascade="all, delete-orphan",

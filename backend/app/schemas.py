@@ -1,5 +1,31 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field
+from typing import List
+
+
+class UserCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=255)
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=128)
+    role: str = Field(default="teacher", description="teacher | methodist | admin")
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserRead(BaseModel):
+    id: str
+    full_name: str
+    email: EmailStr
+    role: str
+    is_active: bool
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserRead
 
 
 class ProgramAnalysis(BaseModel):

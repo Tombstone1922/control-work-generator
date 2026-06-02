@@ -79,6 +79,15 @@ def get_current_user(
     return user
 
 
+def require_roles(*allowed_roles: str):
+    def dependency(current_user: models.User = Depends(get_current_user)) -> models.User:
+        if current_user.role not in set(allowed_roles):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав для выполнения операции.")
+        return current_user
+
+    return dependency
+
+
 def _b64_json(value: dict) -> str:
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")

@@ -102,6 +102,9 @@ def save_generation(db: Session, generation: GenerationResponse) -> models.Gener
         topic_coverage=generation.quality_report.topic_coverage,
         duplicate_rate=generation.quality_report.duplicate_rate,
         total_questions=generation.quality_report.total_questions,
+        status=generation.status,
+        review_comment=generation.review_comment,
+        reviewed_by_user_id=generation.reviewed_by_user_id,
     )
     db.add(entity)
     db.commit()
@@ -122,6 +125,9 @@ def generation_to_schema(entity: models.GenerationSession) -> GenerationResponse
         program_id=entity.program_id,
         variants=variants,
         quality_report=report,
+        status=entity.status,
+        review_comment=entity.review_comment,
+        reviewed_by_user_id=entity.reviewed_by_user_id,
     )
 
 
@@ -130,14 +136,19 @@ def get_generation(db: Session, session_id: str) -> GenerationResponse | None:
     return generation_to_schema(entity) if entity else None
 
 
-def get_generation_for_user(db: Session, session_id: str, user: models.User) -> GenerationResponse | None:
+def get_generation_entity_for_user(db: Session, session_id: str, user: models.User) -> models.GenerationSession | None:
     entity = db.get(models.GenerationSession, session_id)
     if entity is None:
         return None
     program = db.get(models.Program, entity.program_id)
     if not user_can_access_program(user, program):
         return None
-    return generation_to_schema(entity)
+    return entity
+
+
+def get_generation_for_user(db: Session, session_id: str, user: models.User) -> GenerationResponse | None:
+    entity = get_generation_entity_for_user(db, session_id, user)
+    return generation_to_schema(entity) if entity else None
 
 
 def list_generations(db: Session) -> list[GenerationResponse]:
@@ -172,6 +183,27 @@ def update_generation_variants(
     entity.topic_coverage = report.topic_coverage
     entity.duplicate_rate = report.duplicate_rate
     entity.total_questions = report.total_questions
+    if entity.status in {"in_review", "approved"}:
+        entity.status = "revision_required"
+    db.commit()
+    db.refresh(entity)
+    return generation_to_schema(entity)
+
+
+def update_generation_status(
+    db: Session,
+    session_id: str,
+    status: str,
+    review_comment: str,
+    reviewed_by_user_id: str | None,
+) -> GenerationResponse | None:
+    entity = db.get(models.GenerationSession, session_id)
+    if entity is None:
+        return None
+
+    entity.status = status
+    entity.review_comment = review_comment.strip()
+    entity.reviewed_by_user_id = reviewed_by_user_id
     db.commit()
     db.refresh(entity)
     return generation_to_schema(entity)

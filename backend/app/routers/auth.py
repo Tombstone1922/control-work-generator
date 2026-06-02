@@ -10,7 +10,6 @@ from app.schemas import AuthResponse, UserCreate, UserLogin, UserRead
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-ALLOWED_ROLES = {"teacher", "methodist", "admin"}
 
 
 def user_to_schema(user: models.User) -> UserRead:
@@ -25,7 +24,6 @@ def user_to_schema(user: models.User) -> UserRead:
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> AuthResponse:
-    role = payload.role if payload.role in ALLOWED_ROLES else "teacher"
     existing_user = db.scalar(select(models.User).where(models.User.email == payload.email.lower()))
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует.")
@@ -35,7 +33,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> AuthResponse
         full_name=payload.full_name.strip(),
         email=payload.email.lower(),
         password_hash=hash_password(payload.password),
-        role=role,
+        role="teacher",
     )
     db.add(user)
     db.commit()

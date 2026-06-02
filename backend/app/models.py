@@ -50,6 +50,10 @@ class GenerationSession(Base):
     topic_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     duplicate_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="generated")
+    review_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     program: Mapped[Program] = relationship(back_populates="generations")

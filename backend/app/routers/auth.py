@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models
@@ -28,17 +28,18 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> AuthResponse
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует.")
 
+    users_count = db.scalar(select(func.count()).select_from(models.User)) or 0
+    role = "admin" if users_count == 0 else "teacher"
     user = models.User(
         id=str(uuid4()),
         full_name=payload.full_name.strip(),
         email=payload.email.lower(),
         password_hash=hash_password(payload.password),
-        role="teacher",
+        role=role,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-
     return AuthResponse(access_token=create_access_token(user), user=user_to_schema(user))
 
 
@@ -49,7 +50,6 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> AuthResponse:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный email или пароль.")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Пользователь заблокирован.")
-
     return AuthResponse(access_token=create_access_token(user), user=user_to_schema(user))
 
 

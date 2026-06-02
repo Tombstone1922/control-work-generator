@@ -6,7 +6,6 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=255)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
-    role: str = Field(default="teacher", description="teacher | methodist | admin")
 
 
 class UserLogin(BaseModel):
@@ -19,6 +18,14 @@ class UserRead(BaseModel):
     full_name: str
     email: EmailStr
     role: str
+    is_active: bool
+
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+
+class UserActiveUpdate(BaseModel):
     is_active: bool
 
 
@@ -70,10 +77,18 @@ class GenerationResponse(BaseModel):
     program_id: str
     variants: List[ControlWorkVariant]
     quality_report: QualityReport
+    status: str = "generated"
+    review_comment: str = ""
+    reviewed_by_user_id: str | None = None
 
 
 class GenerationUpdateRequest(BaseModel):
     variants: List[ControlWorkVariant]
+
+
+class GenerationStatusUpdateRequest(BaseModel):
+    status: str
+    review_comment: str = ""
 
 
 class ErrorResponse(BaseModel):

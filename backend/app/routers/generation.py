@@ -10,14 +10,21 @@ from app.repositories import (
     get_program_for_user,
     list_generations_for_user,
     save_generation,
+    update_generation_status,
     update_generation_variants,
 )
-from app.schemas import GenerationRequest, GenerationResponse, GenerationUpdateRequest
+from app.schemas import (
+    GenerationRequest,
+    GenerationResponse,
+    GenerationStatusUpdateRequest,
+    GenerationUpdateRequest,
+)
 from app.security import get_current_user
 from app.services.question_generator import generate_question, generate_variants
 from app.services.quality_checker import build_quality_report
 
 router = APIRouter(prefix="/api/generation", tags=["generation"])
+ALLOWED_STATUSES = {"generated", "in_review", "revision_required", "approved"}
 
 
 @router.post("/run", response_model=GenerationResponse)
@@ -44,6 +51,7 @@ def run_generation(
         program_id=payload.program_id,
         variants=variants,
         quality_report=report,
+        status="generated",
     )
     save_generation(db, response)
     return response
@@ -91,6 +99,31 @@ def update_generation(
     return updated
 
 
+@router.patch("/{session_id}/status", response_model=GenerationResponse)
+def update_status(
+    session_id: str,
+    payload: GenerationStatusUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> GenerationResponse:
+    generation = get_generation_for_user(db, session_id, current_user)
+    if generation is None:
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
+    if payload.status not in ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail="Недопустимый статус.")
+
+    if current_user.role == "teacher" and payload.status not in {"generated", "in_review"}:
+        raise HTTPException(status_code=403, detail="Преподаватель может отправить работу только на проверку.")
+    if current_user.role in {"methodist", "admin"} and payload.status not in {"revision_required", "approved", "in_review"}:
+        raise HTTPException(status_code=403, detail="Недопустимое изменение статуса для проверяющего.")
+
+    reviewed_by = current_user.id if current_user.role in {"methodist", "admin"} else None
+    updated = update_generation_status(db, session_id, payload.status, payload.review_comment, reviewed_by)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
+    return updated
+
+
 @router.post("/{session_id}/regenerate-question/{question_id}", response_model=GenerationResponse)
 def regenerate_question(
     session_id: str,
@@ -107,12 +140,7 @@ def regenerate_question(
         raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
 
     question_found = False
-    all_texts = [
-        question.text
-        for variant in generation.variants
-        for question in variant.questions
-    ]
-
+    all_texts = [question.text for variant in generation.variants for question in variant.questions]
     updated_variants = []
     for variant in generation.variants:
         updated_questions = []

@@ -66,6 +66,58 @@ class ProgramAnalysis(BaseModel):
     analysis_report: RpdAnalysisReport = Field(default_factory=RpdAnalysisReport)
 
 
+class AssessmentFundSection(BaseModel):
+    code: str
+    title: str
+    description: str
+    assessment_type: str
+    enabled: bool = True
+    topics: List[str] = Field(default_factory=list)
+    planned_items: int = 0
+    generated_items: int = 0
+
+
+class AssessmentCompetencyRead(BaseModel):
+    id: str
+    code: str
+    description: str = ""
+    indicators: List[str] = Field(default_factory=list)
+    levels: List[str] = Field(default_factory=list)
+
+
+class AssessmentFundValidation(BaseModel):
+    completeness_score: int = 0
+    topics_coverage_score: int = 0
+    competencies_coverage_score: int = 0
+    missing_sections: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class AssessmentFundCreateRequest(BaseModel):
+    program_id: str
+    discipline_name: str | None = None
+
+
+class AssessmentFundUpdateRequest(BaseModel):
+    title: str | None = None
+    discipline_name: str | None = None
+    status: str | None = None
+    assessment_types: List[str] | None = None
+    sections: List[AssessmentFundSection] | None = None
+
+
+class AssessmentFundResponse(BaseModel):
+    fund_id: str
+    program_id: str
+    title: str
+    discipline_name: str
+    status: str
+    assessment_types: List[str]
+    sections: List[AssessmentFundSection]
+    competencies: List[AssessmentCompetencyRead]
+    validation: AssessmentFundValidation
+
+
 class GenerationRequest(BaseModel):
     program_id: str
     variants_count: int = Field(default=2, ge=1, le=20)

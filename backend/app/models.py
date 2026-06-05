@@ -39,6 +39,10 @@ class Program(Base):
         back_populates="program",
         cascade="all, delete-orphan",
     )
+    assessment_funds: Mapped[list["AssessmentFund"]] = relationship(
+        back_populates="program",
+        cascade="all, delete-orphan",
+    )
 
 
 class GenerationSession(Base):
@@ -58,3 +62,37 @@ class GenerationSession(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     program: Mapped[Program] = relationship(back_populates="generations")
+
+
+class AssessmentFund(Base):
+    __tablename__ = "assessment_funds"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    discipline_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    assessment_types_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    sections_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    validation_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    program: Mapped[Program] = relationship(back_populates="assessment_funds")
+    competencies: Mapped[list["AssessmentCompetency"]] = relationship(
+        back_populates="fund",
+        cascade="all, delete-orphan",
+    )
+
+
+class AssessmentCompetency(Base):
+    __tablename__ = "assessment_competencies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(ForeignKey("assessment_funds.id"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    indicators_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    levels_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+    fund: Mapped[AssessmentFund] = relationship(back_populates="competencies")

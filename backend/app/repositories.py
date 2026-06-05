@@ -9,6 +9,7 @@ from app.schemas import (
     GenerationResponse,
     ProgramAnalysis,
     QualityReport,
+    RpdAnalysisReport,
 )
 
 
@@ -18,6 +19,11 @@ def _dump(value) -> str:
 
 def _load(value: str):
     return json.loads(value or "[]")
+
+
+def _load_dict(value: str) -> dict:
+    loaded = json.loads(value or "{}")
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def save_program(
@@ -34,9 +40,21 @@ def save_program(
         topics_json=_dump(program.topics),
         competencies_json=_dump(program.competencies),
         learning_outcomes_json=_dump(program.learning_outcomes),
+        analysis_report_json=_dump(program.analysis_report.model_dump()),
         owner_user_id=owner_user_id,
     )
     db.add(entity)
+    db.commit()
+    db.refresh(entity)
+    return entity
+
+
+def update_program_analysis(db: Session, entity: models.Program, program: ProgramAnalysis) -> models.Program:
+    entity.text_preview = program.text_preview
+    entity.topics_json = _dump(program.topics)
+    entity.competencies_json = _dump(program.competencies)
+    entity.learning_outcomes_json = _dump(program.learning_outcomes)
+    entity.analysis_report_json = _dump(program.analysis_report.model_dump())
     db.commit()
     db.refresh(entity)
     return entity
@@ -50,6 +68,7 @@ def program_to_schema(program: models.Program) -> ProgramAnalysis:
         topics=_load(program.topics_json),
         competencies=_load(program.competencies_json),
         learning_outcomes=_load(program.learning_outcomes_json),
+        analysis_report=RpdAnalysisReport(**_load_dict(program.analysis_report_json)),
     )
 
 

@@ -30,6 +30,7 @@ class Program(Base):
     topics_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     competencies_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     learning_outcomes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    analysis_report_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 

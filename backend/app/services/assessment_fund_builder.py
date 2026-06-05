@@ -15,14 +15,24 @@ DEFAULT_LEVELS = [
     "Продвинутый (отлично)",
 ]
 
-DEFAULT_SECTIONS = [
+BASE_SECTIONS = [
     ("competency_matrix", "1. Перечень компетенций и уровни их сформированности", "competency_matrix"),
     ("current_oral", "2.1 Вопросы для устного опроса", "oral"),
     ("current_practice", "2.1 Практические задания для текущего контроля", "practice"),
-    ("intermediate_exam_questions", "2.2 Вопросы для экзамена", "exam_questions"),
-    ("intermediate_exam_practice", "2.2 Практические задания для экзамена", "exam_practice"),
     ("diagnostic", "3. Итоговая диагностическая работа", "diagnostic"),
     ("grading_rubric", "4. Критерии выставления оценок", "grading_rubric"),
+]
+
+OPTIONAL_SECTIONS = [
+    ("intermediate_exam_questions", "2.2 Вопросы для экзамена", "exam_questions"),
+    ("intermediate_exam_practice", "2.2 Практические задания для экзамена", "exam_practice"),
+    ("intermediate_credit", "2.2 Вопросы и задания для зачета", "credit"),
+    ("control_work", "2.3 Контрольная работа", "control_work"),
+    ("coursework", "2.4 Курсовая работа", "coursework"),
+    ("course_project", "2.4 Курсовой проект", "course_project"),
+    ("laboratory", "2.5 Лабораторные работы", "laboratory"),
+    ("test_bank", "2.6 Банк тестовых заданий", "test_bank"),
+    ("report_topics", "2.7 Темы рефератов и докладов", "report_topics"),
 ]
 
 ASSESSMENT_TYPE_LABELS = {
@@ -30,6 +40,13 @@ ASSESSMENT_TYPE_LABELS = {
     "practice": "Практические задания",
     "exam_questions": "Вопросы для экзамена",
     "exam_practice": "Практические задания для экзамена",
+    "credit": "Зачет",
+    "control_work": "Контрольная работа",
+    "coursework": "Курсовая работа",
+    "course_project": "Курсовой проект",
+    "laboratory": "Лабораторные работы",
+    "test_bank": "Банк тестовых заданий",
+    "report_topics": "Темы рефератов и докладов",
     "diagnostic": "Итоговая диагностическая работа",
     "grading_rubric": "Критерии оценивания",
     "competency_matrix": "Матрица компетенций",
@@ -46,11 +63,15 @@ class AssessmentFundDraft:
     validation: AssessmentFundValidation
 
 
-def build_assessment_fund(program: ProgramAnalysis, discipline_name: str | None = None) -> AssessmentFundDraft:
+def build_assessment_fund(
+    program: ProgramAnalysis,
+    discipline_name: str | None = None,
+    source_text: str | None = None,
+) -> AssessmentFundDraft:
     name = (discipline_name or _guess_discipline_name(program.filename)).strip()
     topics = program.topics or ["Общие положения дисциплины"]
     competencies = _build_competencies(program)
-    assessment_types = _detect_assessment_types(program.text_preview)
+    assessment_types = _detect_assessment_types(source_text or program.text_preview)
     sections = _build_sections(topics, assessment_types)
     validation = validate_assessment_fund(sections, competencies, topics)
 
@@ -78,8 +99,18 @@ def validate_assessment_fund(
         warnings.append("Компетенции из РПД не распознаны. Необходимо заполнить матрицу вручную.")
     if not topics:
         warnings.append("Темы дисциплины не распознаны.")
-    if any(section.planned_items == 0 for section in enabled if section.assessment_type not in {"competency_matrix", "grading_rubric"}):
+    if any(
+        section.planned_items == 0
+        for section in enabled
+        if section.assessment_type not in {"competency_matrix", "grading_rubric"}
+    ):
         warnings.append("Для некоторых разделов не рассчитано количество заданий.")
+
+    required_types = {"competency_matrix", "oral", "practice", "diagnostic", "grading_rubric"}
+    enabled_types = {section.assessment_type for section in enabled}
+    missing_required = required_types - enabled_types
+    if missing_required:
+        warnings.append("Отключены базовые разделы ФОС: " + ", ".join(sorted(missing_required)) + ".")
 
     completeness_score = round(100 * len(enabled) / max(len(sections), 1))
     topics_score = round(100 * len(covered_topics) / max(len(topics), 1))
@@ -96,7 +127,7 @@ def validate_assessment_fund(
 
 def _build_competencies(program: ProgramAnalysis) -> list[AssessmentCompetencyRead]:
     result: list[AssessmentCompetencyRead] = []
-    outcome_lines = program.learning_outcomes[:12]
+    outcome_lines = program.learning_outcomes[:20]
 
     for code in program.competencies:
         indicators = [line for line in outcome_lines if code.lower() in line.lower()]
@@ -116,7 +147,8 @@ def _build_competencies(program: ProgramAnalysis) -> list[AssessmentCompetencyRe
 
 def _build_sections(topics: list[str], assessment_types: list[str]) -> list[AssessmentFundSection]:
     sections: list[AssessmentFundSection] = []
-    for code, title, assessment_type in DEFAULT_SECTIONS:
+    all_sections = BASE_SECTIONS + OPTIONAL_SECTIONS
+    for code, title, assessment_type in all_sections:
         enabled = assessment_type in assessment_types or assessment_type in {"competency_matrix", "grading_rubric"}
         planned_items = _planned_items(assessment_type, topics) if enabled else 0
         sections.append(
@@ -141,19 +173,40 @@ def _planned_items(assessment_type: str, topics: list[str]) -> int:
         "practice": count * 4,
         "exam_questions": max(count * 2, 20),
         "exam_practice": max(count, 10),
+        "credit": max(count * 2, 20),
+        "control_work": max(count, 10),
+        "coursework": max(min(count, 20), 5),
+        "course_project": max(min(count, 20), 5),
+        "laboratory": max(count, 8),
+        "test_bank": max(count * 5, 40),
+        "report_topics": max(min(count * 2, 30), 10),
         "diagnostic": max(count * 3, 30),
         "competency_matrix": 0,
         "grading_rubric": 0,
     }.get(assessment_type, 0)
 
 
-def _detect_assessment_types(text_preview: str) -> list[str]:
-    lower = text_preview.lower()
+def _detect_assessment_types(source_text: str) -> list[str]:
+    lower = source_text.lower()
     types = ["oral", "practice", "diagnostic", "grading_rubric", "competency_matrix"]
-    if any(word in lower for word in ("экзамен", "экзамена")):
+
+    if re.search(r"\bэкзамен\w*", lower):
         types.extend(["exam_questions", "exam_practice"])
-    else:
-        types.extend(["exam_questions", "exam_practice"])
+    if re.search(r"\bзач[её]т\w*", lower):
+        types.append("credit")
+    if re.search(r"контрольн\w*\s+работ", lower):
+        types.append("control_work")
+    if re.search(r"курсов\w*\s+работ", lower):
+        types.append("coursework")
+    if re.search(r"курсов\w*\s+проект", lower):
+        types.append("course_project")
+    if re.search(r"лабораторн\w*\s+работ", lower):
+        types.append("laboratory")
+    if re.search(r"тестов\w*\s+задан|тестирован", lower):
+        types.append("test_bank")
+    if re.search(r"реферат|доклад", lower):
+        types.append("report_topics")
+
     return list(dict.fromkeys(types))
 
 

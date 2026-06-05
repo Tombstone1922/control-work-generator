@@ -18,6 +18,7 @@ from app.schemas import (
 )
 from app.security import get_current_user
 from app.services.assessment_fund_builder import build_assessment_fund
+from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 
 router = APIRouter(prefix="/api/assessment-funds", tags=["assessment-funds"])
 ALLOWED_STATUSES = {"draft", "generated", "in_review", "revision_required", "approved"}
@@ -33,7 +34,16 @@ def create_fund(
     if program is None:
         raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
 
-    draft = build_assessment_fund(program_to_schema(program), payload.discipline_name)
+    try:
+        source_text = extract_text(program.file_path)
+    except (UnsupportedDocumentFormat, FileNotFoundError):
+        source_text = program.text_preview
+
+    draft = build_assessment_fund(
+        program_to_schema(program),
+        payload.discipline_name,
+        source_text=source_text,
+    )
     return create_assessment_fund(db, program, draft)
 
 

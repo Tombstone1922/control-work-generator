@@ -6,15 +6,52 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
-from app.repositories import get_program_for_user, list_programs_for_user, save_program
-from app.schemas import ProgramAnalysis
+from app.repositories import (
+    get_program_entity_for_user,
+    get_program_for_user,
+    list_programs_for_user,
+    save_program,
+    update_program_analysis,
+)
+from app.schemas import ProgramAnalysis, RpdAnalysisReport, RpdDiagnostics
 from app.security import get_current_user
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
-from app.services.rpd_analyzer import analyze_rpd_text
+from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
 
 router = APIRouter(prefix="/api/programs", tags=["programs"])
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _build_program_schema(program_id: str, filename: str, text: str, analysis: RpdAnalysisResult) -> ProgramAnalysis:
+    diagnostics = RpdDiagnostics(
+        source_lines=analysis.diagnostics.source_lines,
+        analyzed_lines=analysis.diagnostics.analyzed_lines,
+        ignored_lines=analysis.diagnostics.ignored_lines,
+        topics_count=analysis.diagnostics.topics_count,
+        competencies_count=analysis.diagnostics.competencies_count,
+        learning_outcomes_count=analysis.diagnostics.learning_outcomes_count,
+        detected_sections_count=analysis.diagnostics.detected_sections_count,
+        quality_score=analysis.diagnostics.quality_score,
+        extraction_strategy=analysis.diagnostics.extraction_strategy,
+        warnings=analysis.diagnostics.warnings,
+    )
+    report = RpdAnalysisReport(
+        detected_sections=analysis.detected_sections,
+        topic_sources=analysis.topic_sources,
+        competency_sources=analysis.competency_sources,
+        outcome_sources=analysis.outcome_sources,
+        diagnostics=diagnostics,
+    )
+    return ProgramAnalysis(
+        program_id=program_id,
+        filename=filename,
+        text_preview=text[:1000],
+        topics=analysis.topics,
+        competencies=analysis.competencies,
+        learning_outcomes=analysis.learning_outcomes,
+        analysis_report=report,
+    )
 
 
 @router.post("/upload", response_model=ProgramAnalysis)
@@ -46,16 +83,28 @@ async def upload_program(
             detail="Не удалось извлечь текст из документа. Проверьте, что файл содержит текстовый слой.",
         )
 
-    analysis = analyze_rpd_text(text)
-    result = ProgramAnalysis(
-        program_id=program_id,
-        filename=original_name,
-        text_preview=text[:1000],
-        topics=analysis.topics,
-        competencies=analysis.competencies,
-        learning_outcomes=analysis.learning_outcomes,
-    )
+    result = _build_program_schema(program_id, original_name, text, analyze_rpd_text(text))
     save_program(db, result, str(storage_path), owner_user_id=current_user.id)
+    return result
+
+
+@router.post("/{program_id}/reanalyze", response_model=ProgramAnalysis)
+def reanalyze_program(
+    program_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> ProgramAnalysis:
+    entity = get_program_entity_for_user(db, program_id, current_user)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
+
+    try:
+        text = extract_text(entity.file_path)
+    except (UnsupportedDocumentFormat, FileNotFoundError) as exc:
+        raise HTTPException(status_code=422, detail="Не удалось повторно прочитать исходный файл РПД.") from exc
+
+    result = _build_program_schema(entity.id, entity.filename, text, analyze_rpd_text(text))
+    update_program_analysis(db, entity, result)
     return result
 
 

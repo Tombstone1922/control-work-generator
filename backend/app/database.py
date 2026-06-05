@@ -37,6 +37,8 @@ def _apply_sqlite_migrations() -> None:
             program_columns = {column["name"] for column in inspector.get_columns("programs")}
             if "owner_user_id" not in program_columns:
                 connection.execute(text("ALTER TABLE programs ADD COLUMN owner_user_id VARCHAR(64)"))
+            if "analysis_report_json" not in program_columns:
+                connection.execute(text("ALTER TABLE programs ADD COLUMN analysis_report_json TEXT NOT NULL DEFAULT '{}'"))
 
         if "generation_sessions" in table_names:
             generation_columns = {column["name"] for column in inspector.get_columns("generation_sessions")}

@@ -35,6 +35,27 @@ class AuthResponse(BaseModel):
     user: UserRead
 
 
+class RpdDiagnostics(BaseModel):
+    source_lines: int = 0
+    analyzed_lines: int = 0
+    ignored_lines: int = 0
+    topics_count: int = 0
+    competencies_count: int = 0
+    learning_outcomes_count: int = 0
+    detected_sections_count: int = 0
+    quality_score: int = 0
+    extraction_strategy: str = "rules"
+    warnings: List[str] = Field(default_factory=list)
+
+
+class RpdAnalysisReport(BaseModel):
+    detected_sections: List[str] = Field(default_factory=list)
+    topic_sources: List[str] = Field(default_factory=list)
+    competency_sources: List[str] = Field(default_factory=list)
+    outcome_sources: List[str] = Field(default_factory=list)
+    diagnostics: RpdDiagnostics = Field(default_factory=RpdDiagnostics)
+
+
 class ProgramAnalysis(BaseModel):
     program_id: str
     filename: str
@@ -42,6 +63,7 @@ class ProgramAnalysis(BaseModel):
     topics: List[str]
     competencies: List[str]
     learning_outcomes: List[str]
+    analysis_report: RpdAnalysisReport = Field(default_factory=RpdAnalysisReport)
 
 
 class GenerationRequest(BaseModel):

@@ -60,7 +60,10 @@ def create_assessment_fund(
         )
 
     db.commit()
-    return get_assessment_fund_for_user(db, entity.id, program.owner) if program.owner else fund_to_schema(_get_fund_entity(db, entity.id))
+    persisted = _get_fund_entity(db, entity.id)
+    if persisted is None:
+        raise RuntimeError("Не удалось прочитать созданный ФОС из базы данных.")
+    return fund_to_schema(persisted)
 
 
 def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
@@ -143,7 +146,7 @@ def update_assessment_fund_for_user(
                 )
                 for item in entity.competencies
             ],
-            entity.program and json.loads(entity.program.topics_json or "[]") or [],
+            json.loads(entity.program.topics_json or "[]"),
         )
         entity.validation_json = _dump(validation.model_dump())
 
@@ -181,6 +184,6 @@ def _get_fund_entity(db: Session, fund_id: str) -> models.AssessmentFund | None:
         .where(models.AssessmentFund.id == fund_id)
         .options(
             selectinload(models.AssessmentFund.competencies),
-            selectinload(models.AssessmentFund.program).selectinload(models.Program.owner),
+            selectinload(models.AssessmentFund.program),
         )
     )

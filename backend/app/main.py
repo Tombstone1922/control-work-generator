@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
 from app.routers import admin, auth, export, generation, programs
 
-app = FastAPI(title="Control Work Generator API", version="0.4.0")
+app = FastAPI(title="Control Work Generator API", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,

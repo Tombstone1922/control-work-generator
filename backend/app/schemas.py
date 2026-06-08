@@ -118,6 +118,41 @@ class AssessmentFundResponse(BaseModel):
     validation: AssessmentFundValidation
 
 
+class AssessmentItemRead(BaseModel):
+    id: str
+    fund_id: str
+    section_code: str
+    assessment_type: str
+    item_type: str
+    topic: str
+    competency_code: str = ""
+    indicator: str = ""
+    difficulty: str
+    text: str
+    answer: str = ""
+    criteria: List[str] = Field(default_factory=list)
+    source_context: str = ""
+    source_kind: str = "template"
+    status: str = "draft"
+
+
+class AssessmentItemUpdateRequest(BaseModel):
+    topic: str | None = None
+    competency_code: str | None = None
+    indicator: str | None = None
+    difficulty: str | None = None
+    text: str | None = None
+    answer: str | None = None
+    criteria: List[str] | None = None
+    status: str | None = None
+
+
+class AssessmentItemsGenerateRequest(BaseModel):
+    section_code: str | None = None
+    replace_existing: bool = False
+    max_items_per_section: int = Field(default=40, ge=1, le=200)
+
+
 class GenerationRequest(BaseModel):
     program_id: str
     variants_count: int = Field(default=2, ge=1, le=20)

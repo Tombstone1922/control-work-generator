@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import AssessmentItemBank from './AssessmentItemBank.jsx';
 
 const SECTION_LABELS = {
   competency_matrix: 'Матрица компетенций',
@@ -6,6 +7,13 @@ const SECTION_LABELS = {
   practice: 'Практические задания',
   exam_questions: 'Вопросы для экзамена',
   exam_practice: 'Практические задания для экзамена',
+  credit: 'Зачет',
+  control_work: 'Контрольная работа',
+  coursework: 'Курсовая работа',
+  course_project: 'Курсовой проект',
+  laboratory: 'Лабораторные работы',
+  test_bank: 'Банк тестовых заданий',
+  report_topics: 'Темы рефератов и докладов',
   diagnostic: 'Итоговая диагностическая работа',
   grading_rubric: 'Критерии оценивания',
 };
@@ -22,6 +30,10 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
 
   const validation = fund?.validation || {};
   const enabledSections = useMemo(() => fund?.sections?.filter((section) => section.enabled) || [], [fund]);
+  const generatedItems = useMemo(
+    () => enabledSections.reduce((sum, section) => sum + (section.generated_items || 0), 0),
+    [enabledSections],
+  );
 
   useEffect(() => {
     loadFunds();
@@ -37,7 +49,10 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       const response = await api.get('/api/assessment-funds/');
       const related = response.data.filter((item) => item.program_id === program.program_id);
       setFunds(related);
-      if (related.length && !fund) setFund(related[0]);
+      if (related.length && !fund) {
+        setFund(related[0]);
+        setDisciplineName(related[0].discipline_name);
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось загрузить проекты ФОС.');
     } finally {
@@ -74,9 +89,17 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setFund(response.data);
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
+      return response.data;
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть ФОС.');
+      return null;
     }
+  }
+
+  async function refreshCurrentFund() {
+    if (!fund?.fund_id) return;
+    await openFund(fund.fund_id);
+    await loadFunds();
   }
 
   function updateSection(sectionCode, patch) {
@@ -145,9 +168,9 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     <section className="card fosCard">
       <div className="sectionHeader">
         <div>
-          <p className="eyebrow">Новый модуль</p>
+          <p className="eyebrow">Модуль формирования ФОС</p>
           <h2>Фонд оценочных средств</h2>
-          <p className="muted">Создайте структуру ФОС по РПД. На следующем этапе разделы будут наполняться банками заданий.</p>
+          <p className="muted">Создайте структуру ФОС по РПД, настройте разделы и сформируйте редактируемый банк заданий.</p>
         </div>
         <div className="actionGroup">
           <button className="secondary" type="button" onClick={loadFunds} disabled={isLoading}>
@@ -208,7 +231,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             </div>
           </div>
 
-          {hasUnsavedChanges && <div className="notice">Есть несохраненные изменения в структуре ФОС.</div>}
+          {hasUnsavedChanges && <div className="notice">Есть несохраненные изменения в структуре ФОС. Сохраните их до генерации банка заданий.</div>}
 
           <div className="diagnosticsGrid">
             <Metric value={`${validation.completeness_score || 0}%`} label="Заполненность структуры" />
@@ -216,7 +239,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             <Metric value={`${validation.competencies_coverage_score || 0}%`} label="Покрытие компетенций" />
             <Metric value={enabledSections.length} label="Активные разделы" />
             <Metric value={fund.competencies.length} label="Компетенции" />
-            <Metric value={enabledSections.reduce((sum, section) => sum + section.planned_items, 0)} label="План заданий" />
+            <Metric value={generatedItems} label="Сформировано заданий" />
           </div>
 
           {validation.warnings?.length > 0 && (
@@ -244,7 +267,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
                     </div>
                     <p className="muted">{section.description}</p>
                     <div className="fosSectionMeta">
-                      <span>Тем: {section.topics.length}</span>
+                      <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
                       <label>
                         План заданий
                         <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
@@ -269,6 +292,17 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
               </div>
             </div>
           </div>
+
+          {!hasUnsavedChanges && (
+            <AssessmentItemBank
+              api={api}
+              fund={fund}
+              sections={fund.sections}
+              setError={setError}
+              setSuccess={setSuccess}
+              onFundRefresh={refreshCurrentFund}
+            />
+          )}
         </>
       )}
     </section>

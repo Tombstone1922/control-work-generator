@@ -60,7 +60,10 @@ def list_items_for_user(
     fund = get_fund_entity_for_user(db, fund_id, user)
     if fund is None:
         return None
+    return list_items(db, fund_id, section_code)
 
+
+def list_items(db: Session, fund_id: str, section_code: str | None = None) -> list[AssessmentItemRead]:
     query = select(models.AssessmentItem).where(models.AssessmentItem.fund_id == fund_id)
     if section_code:
         query = query.where(models.AssessmentItem.section_code == section_code)
@@ -108,7 +111,7 @@ def replace_items_for_sections(
     db.flush()
     _refresh_section_item_counts(db, fund)
     db.commit()
-    return list_items_for_user(db, fund.id, fund.program.owner or models.User(role="admin")) or []
+    return list_items(db, fund.id)
 
 
 def update_item_for_user(

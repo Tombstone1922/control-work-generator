@@ -4,6 +4,7 @@ import App from './App.jsx';
 import './styles.css';
 import './analysis.css';
 import './fos.css';
+import './item-bank.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

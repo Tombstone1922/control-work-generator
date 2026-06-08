@@ -83,6 +83,10 @@ class AssessmentFund(Base):
         back_populates="fund",
         cascade="all, delete-orphan",
     )
+    items: Mapped[list["AssessmentItem"]] = relationship(
+        back_populates="fund",
+        cascade="all, delete-orphan",
+    )
 
 
 class AssessmentCompetency(Base):
@@ -96,3 +100,27 @@ class AssessmentCompetency(Base):
     levels_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
     fund: Mapped[AssessmentFund] = relationship(back_populates="competencies")
+
+
+class AssessmentItem(Base):
+    __tablename__ = "assessment_items"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(ForeignKey("assessment_funds.id"), nullable=False, index=True)
+    section_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    assessment_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(64), nullable=False, default="open")
+    topic: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    competency_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    indicator: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    difficulty: Mapped[str] = mapped_column(String(32), nullable=False, default="medium")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    criteria_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    source_context: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_kind: Mapped[str] = mapped_column(String(64), nullable=False, default="template")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    fund: Mapped[AssessmentFund] = relationship(back_populates="items")

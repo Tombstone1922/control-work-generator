@@ -169,6 +169,28 @@ class AssessmentItemsGenerateRequest(BaseModel):
     section_code: str | None = None
     replace_existing: bool = False
     max_items_per_section: int = Field(default=40, ge=1, le=200)
+    generation_mode: str = Field(default="template", description="template | hybrid | ollama")
+    ollama_model: str | None = None
+    ollama_max_items: int = Field(default=12, ge=1, le=50)
+    fallback_to_template: bool = True
+
+
+class AssessmentItemsGenerateResponse(BaseModel):
+    items: List[AssessmentItemRead]
+    requested_mode: str
+    used_mode: str
+    ollama_model: str = ""
+    ollama_generated_items: int = 0
+    template_generated_items: int = 0
+    warnings: List[str] = Field(default_factory=list)
+
+
+class LocalModelStatusResponse(BaseModel):
+    available: bool
+    base_url: str
+    models: List[str] = Field(default_factory=list)
+    default_model: str = ""
+    error: str = ""
 
 
 class GenerationRequest(BaseModel):

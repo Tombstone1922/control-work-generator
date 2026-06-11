@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app import models
+from app.assessment_item_validation import AssessmentItemsValidation
 from app.database import get_db
 from app.repositories_assessment_items import (
     delete_item_for_user,
@@ -21,6 +22,7 @@ from app.schemas import (
 )
 from app.security import get_current_user
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
+from app.services.assessment_item_validator import validate_assessment_items
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
 
@@ -89,6 +91,25 @@ def generate_items(
         )
 
     return replace_items_for_sections(db, fund, target_codes, generated, payload.replace_existing)
+
+
+@router.post("/{fund_id}/validate", response_model=AssessmentItemsValidation)
+def validate_items(
+    fund_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AssessmentItemsValidation:
+    fund = get_fund_entity_for_user(db, fund_id, current_user)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+
+    items = list_items_for_user(db, fund_id, current_user)
+    if items is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+
+    topics = json.loads(fund.program.topics_json or "[]")
+    competencies = [item.code for item in fund.competencies]
+    return validate_assessment_items(items, topics, competencies)
 
 
 @router.put("/{fund_id}/{item_id}", response_model=AssessmentItemRead)

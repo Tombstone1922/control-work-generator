@@ -9,6 +9,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   const [isGenerating, setGenerating] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [isValidating, setValidating] = useState(false);
+  const [isExporting, setExporting] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [maxItemsPerSection, setMaxItemsPerSection] = useState(20);
 
@@ -95,6 +96,28 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     }
   }
 
+  async function downloadAssessmentFund() {
+    if (!fund?.fund_id) return;
+    setExporting(true);
+    setError('');
+    try {
+      const response = await api.get(`/api/export/assessment-fund/${fund.fund_id}/docx`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `fos_${fund.discipline_name || fund.fund_id}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('DOCX-файл ФОС сформирован и скачан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось сформировать DOCX-файл ФОС.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function patchSelectedItem(patch) {
     setItems((current) => current.map((item) => item.id === selectedItemId ? { ...item, ...patch } : item));
   }
@@ -153,6 +176,9 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
           </button>
           <button className="secondary" type="button" onClick={() => validateItems()} disabled={isValidating}>
             {isValidating ? 'Проверяем...' : 'Проверить банк'}
+          </button>
+          <button className="download" type="button" onClick={downloadAssessmentFund} disabled={isExporting}>
+            {isExporting ? 'Формируем DOCX...' : 'Скачать полный ФОС'}
           </button>
         </div>
       </div>

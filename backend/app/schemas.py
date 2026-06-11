@@ -85,6 +85,24 @@ class AssessmentCompetencyRead(BaseModel):
     levels: List[str] = Field(default_factory=list)
 
 
+class AssessmentCompetencyCreateRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    description: str = ""
+    indicators: List[str] = Field(default_factory=list)
+    levels: List[str] = Field(default_factory=lambda: [
+        "Продвинутый уровень",
+        "Повышенный уровень",
+        "Пороговый уровень",
+    ])
+
+
+class AssessmentCompetencyUpdateRequest(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=64)
+    description: str | None = None
+    indicators: List[str] | None = None
+    levels: List[str] | None = None
+
+
 class AssessmentFundValidation(BaseModel):
     completeness_score: int = 0
     topics_coverage_score: int = 0

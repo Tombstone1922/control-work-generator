@@ -6,12 +6,17 @@ from app.database import get_db
 from app.repositories import get_program_entity_for_user, program_to_schema
 from app.repositories_assessment_funds import (
     create_assessment_fund,
+    create_competency_for_user,
+    delete_competency_for_user,
     get_assessment_fund_for_user,
     list_assessment_funds_for_user,
     revalidate_assessment_fund_for_user,
     update_assessment_fund_for_user,
+    update_competency_for_user,
 )
 from app.schemas import (
+    AssessmentCompetencyCreateRequest,
+    AssessmentCompetencyUpdateRequest,
     AssessmentFundCreateRequest,
     AssessmentFundResponse,
     AssessmentFundUpdateRequest,
@@ -101,4 +106,50 @@ def validate_fund(
     fund = revalidate_assessment_fund_for_user(db, fund_id, current_user)
     if fund is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    return fund
+
+
+@router.post("/{fund_id}/competencies", response_model=AssessmentFundResponse)
+def create_competency(
+    fund_id: str,
+    payload: AssessmentCompetencyCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AssessmentFundResponse:
+    try:
+        fund = create_competency_for_user(db, fund_id, current_user, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if fund is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    return fund
+
+
+@router.put("/{fund_id}/competencies/{competency_id}", response_model=AssessmentFundResponse)
+def update_competency(
+    fund_id: str,
+    competency_id: str,
+    payload: AssessmentCompetencyUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AssessmentFundResponse:
+    try:
+        fund = update_competency_for_user(db, fund_id, competency_id, current_user, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if fund is None:
+        raise HTTPException(status_code=404, detail="Компетенция не найдена или нет доступа.")
+    return fund
+
+
+@router.delete("/{fund_id}/competencies/{competency_id}", response_model=AssessmentFundResponse)
+def delete_competency(
+    fund_id: str,
+    competency_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AssessmentFundResponse:
+    fund = delete_competency_for_user(db, fund_id, competency_id, current_user)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="Компетенция не найдена или нет доступа.")
     return fund

@@ -2,16 +2,23 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
+  const [validation, setValidation] = useState(null);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [isLoading, setLoading] = useState(false);
   const [isGenerating, setGenerating] = useState(false);
   const [isSaving, setSaving] = useState(false);
+  const [isValidating, setValidating] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [maxItemsPerSection, setMaxItemsPerSection] = useState(20);
 
   const enabledSections = useMemo(
     () => sections.filter((section) => section.enabled && !['competency_matrix', 'grading_rubric'].includes(section.assessment_type)),
+    [sections],
+  );
+
+  const sectionMap = useMemo(
+    () => Object.fromEntries(sections.map((section) => [section.code, section.title])),
     [sections],
   );
 
@@ -29,6 +36,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     if (!fund?.fund_id) return;
     setSelectedSectionCode('');
     setSelectedItemId('');
+    setValidation(null);
     loadItems();
   }, [fund?.fund_id]);
 
@@ -63,11 +71,27 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       setItems(response.data);
       setSelectedItemId(response.data[0]?.id || '');
       await onFundRefresh();
+      await validateItems(false);
       setSuccess(selectedSectionCode ? 'Задания выбранного раздела сформированы.' : 'Банк заданий ФОС сформирован.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function validateItems(showSuccess = true) {
+    if (!fund?.fund_id) return;
+    setValidating(true);
+    setError('');
+    try {
+      const response = await api.post(`/api/assessment-items/${fund.fund_id}/validate`);
+      setValidation(response.data);
+      if (showSuccess) setSuccess('Проверка банка заданий завершена.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось проверить банк заданий.');
+    } finally {
+      setValidating(false);
     }
   }
 
@@ -91,6 +115,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         status: selectedItem.status,
       });
       setItems((current) => current.map((item) => item.id === response.data.id ? response.data : item));
+      await validateItems(false);
       setSuccess('Задание сохранено.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить задание.');
@@ -108,6 +133,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       setItems(nextItems);
       setSelectedItemId(nextItems[0]?.id || '');
       await onFundRefresh();
+      await validateItems(false);
       setSuccess('Задание удалено.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось удалить задание.');
@@ -121,9 +147,14 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
           <h3>Банк заданий ФОС</h3>
           <p className="muted">Локальный шаблонный генератор создает редактируемые заготовки с привязкой к темам и компетенциям.</p>
         </div>
-        <button className="secondary" type="button" onClick={() => loadItems(selectedSectionCode)} disabled={isLoading}>
-          {isLoading ? 'Обновляем...' : 'Обновить банк'}
-        </button>
+        <div className="actionGroup">
+          <button className="secondary" type="button" onClick={() => loadItems(selectedSectionCode)} disabled={isLoading}>
+            {isLoading ? 'Обновляем...' : 'Обновить банк'}
+          </button>
+          <button className="secondary" type="button" onClick={() => validateItems()} disabled={isValidating}>
+            {isValidating ? 'Проверяем...' : 'Проверить банк'}
+          </button>
+        </div>
       </div>
 
       <div className="itemBankToolbar">
@@ -151,6 +182,8 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         <span>Всего заданий: <strong>{items.length}</strong></span>
         <span>В выбранном разделе: <strong>{visibleItems.length}</strong></span>
       </div>
+
+      {validation && <ValidationDashboard validation={validation} sectionMap={sectionMap} />}
 
       <div className="itemBankGrid">
         <div className="itemBankList">
@@ -193,6 +226,69 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       </div>
     </section>
   );
+}
+
+function ValidationDashboard({ validation, sectionMap }) {
+  return (
+    <section className="itemValidation">
+      <div className="diagnosticsGrid">
+        <Metric value={validation.total_items} label="Всего заданий" />
+        <Metric value={`${validation.topics_coverage_score}%`} label="Покрытие тем" />
+        <Metric value={`${validation.competencies_coverage_score}%`} label="Покрытие компетенций" />
+        <Metric value={`${validation.answers_readiness_score}%`} label="Готовность ответов" />
+        <Metric value={`${validation.criteria_readiness_score}%`} label="Готовность критериев" />
+        <Metric value={`${validation.duplicate_rate}%`} label="Потенциальные дубли" />
+      </div>
+
+      {validation.warnings?.length > 0 && (
+        <div className="notice">
+          <strong>Результаты проверки банка</strong>
+          <ul>{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        </div>
+      )}
+
+      <div className="coverageTableWrap">
+        <h3>Матрица покрытия тем</h3>
+        <table className="coverageTable">
+          <thead>
+            <tr>
+              <th>Тема</th>
+              <th>Всего заданий</th>
+              <th>Разделы</th>
+              <th>Компетенции</th>
+            </tr>
+          </thead>
+          <tbody>
+            {validation.coverage_rows.map((row) => (
+              <tr key={row.topic}>
+                <td>{row.topic}</td>
+                <td>{row.total_items}</td>
+                <td>{Object.entries(row.section_counts).map(([code, count]) => `${sectionMap[code] || code}: ${count}`).join('; ') || '—'}</td>
+                <td>{row.competencies.join(', ') || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {validation.duplicate_groups?.length > 0 && (
+        <div className="duplicateList">
+          <h3>Потенциальные дубли</h3>
+          {validation.duplicate_groups.map((group, index) => (
+            <article className="duplicateItem" key={`${group.sample_text}-${index}`}>
+              <strong>Группа {index + 1} · сходство {Math.round(group.similarity * 100)}%</strong>
+              <p>{group.sample_text}</p>
+              <small>Связанных заданий: {group.item_ids.length}</small>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Metric({ value, label }) {
+  return <div className="metric"><strong>{value}</strong><span>{label}</span></div>;
 }
 
 export default AssessmentItemBank;

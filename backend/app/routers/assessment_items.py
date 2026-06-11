@@ -18,13 +18,32 @@ from app.schemas import (
     AssessmentFundSection,
     AssessmentItemRead,
     AssessmentItemsGenerateRequest,
+    AssessmentItemsGenerateResponse,
     AssessmentItemUpdateRequest,
+    LocalModelStatusResponse,
 )
 from app.security import get_current_user
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
+from app.services.assessment_item_llm_service import apply_local_llm_generation
 from app.services.assessment_item_validator import validate_assessment_items
+from app.services.document_parser import UnsupportedDocumentFormat, extract_text
+from app.services.ollama_client import OllamaClientError, get_ollama_status
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
+
+
+@router.get("/local-model/status", response_model=LocalModelStatusResponse)
+def local_model_status(
+    _: models.User = Depends(get_current_user),
+) -> LocalModelStatusResponse:
+    status = get_ollama_status()
+    return LocalModelStatusResponse(
+        available=status.available,
+        base_url=status.base_url,
+        models=status.models,
+        default_model=status.default_model,
+        error=status.error,
+    )
 
 
 @router.get("/{fund_id}", response_model=list[AssessmentItemRead])
@@ -40,13 +59,13 @@ def list_items(
     return items
 
 
-@router.post("/{fund_id}/generate", response_model=list[AssessmentItemRead])
+@router.post("/{fund_id}/generate", response_model=AssessmentItemsGenerateResponse)
 def generate_items(
     fund_id: str,
     payload: AssessmentItemsGenerateRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
-) -> list[AssessmentItemRead]:
+) -> AssessmentItemsGenerateResponse:
     fund = get_fund_entity_for_user(db, fund_id, current_user)
     if fund is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
@@ -90,7 +109,41 @@ def generate_items(
             )
         )
 
-    return replace_items_for_sections(db, fund, target_codes, generated, payload.replace_existing)
+    source_text = fund.program.text_preview
+    try:
+        source_text = extract_text(fund.program.file_path)
+    except (UnsupportedDocumentFormat, FileNotFoundError, OSError):
+        pass
+
+    try:
+        llm_result = apply_local_llm_generation(
+            items=generated,
+            requested_mode=payload.generation_mode,
+            discipline_name=fund.discipline_name,
+            source_text=source_text,
+            requested_model=payload.ollama_model,
+            ollama_max_items=payload.ollama_max_items,
+            fallback_to_template=payload.fallback_to_template,
+        )
+    except (ValueError, OllamaClientError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    persisted = replace_items_for_sections(
+        db,
+        fund,
+        target_codes,
+        llm_result.items,
+        payload.replace_existing,
+    )
+    return AssessmentItemsGenerateResponse(
+        items=persisted,
+        requested_mode=payload.generation_mode,
+        used_mode=llm_result.used_mode,
+        ollama_model=llm_result.ollama_model,
+        ollama_generated_items=llm_result.ollama_generated_items,
+        template_generated_items=llm_result.template_generated_items,
+        warnings=llm_result.warnings,
+    )
 
 
 @router.post("/{fund_id}/validate", response_model=AssessmentItemsValidation)

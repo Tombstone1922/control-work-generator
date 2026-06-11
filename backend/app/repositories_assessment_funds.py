@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session, selectinload
 from app import models
 from app.repositories import user_can_access_program
 from app.schemas import (
+    AssessmentCompetencyCreateRequest,
     AssessmentCompetencyRead,
+    AssessmentCompetencyUpdateRequest,
     AssessmentFundResponse,
     AssessmentFundSection,
     AssessmentFundValidation,
@@ -67,16 +69,7 @@ def create_assessment_fund(
 
 
 def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
-    competencies = [
-        AssessmentCompetencyRead(
-            id=item.id,
-            code=item.code,
-            description=item.description,
-            indicators=_load_list(item.indicators_json),
-            levels=_load_list(item.levels_json),
-        )
-        for item in entity.competencies
-    ]
+    competencies = [competency_to_schema(item) for item in entity.competencies]
     return AssessmentFundResponse(
         fund_id=entity.id,
         program_id=entity.program_id,
@@ -87,6 +80,16 @@ def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
         sections=[AssessmentFundSection(**item) for item in _load_list(entity.sections_json)],
         competencies=competencies,
         validation=AssessmentFundValidation(**_load_dict(entity.validation_json)),
+    )
+
+
+def competency_to_schema(entity: models.AssessmentCompetency) -> AssessmentCompetencyRead:
+    return AssessmentCompetencyRead(
+        id=entity.id,
+        code=entity.code,
+        description=entity.description,
+        indicators=_load_list(entity.indicators_json),
+        levels=_load_list(entity.levels_json),
     )
 
 
@@ -134,21 +137,7 @@ def update_assessment_fund_for_user(
         entity.assessment_types_json = _dump(assessment_types)
     if sections is not None:
         entity.sections_json = _dump([section.model_dump() for section in sections])
-        validation = validate_assessment_fund(
-            sections,
-            [
-                AssessmentCompetencyRead(
-                    id=item.id,
-                    code=item.code,
-                    description=item.description,
-                    indicators=_load_list(item.indicators_json),
-                    levels=_load_list(item.levels_json),
-                )
-                for item in entity.competencies
-            ],
-            json.loads(entity.program.topics_json or "[]"),
-        )
-        entity.validation_json = _dump(validation.model_dump())
+    _recalculate_validation(entity)
 
     db.commit()
     db.refresh(entity)
@@ -160,22 +149,107 @@ def revalidate_assessment_fund_for_user(db: Session, fund_id: str, user: models.
     if entity is None or not user_can_access_program(user, entity.program):
         return None
 
-    sections = [AssessmentFundSection(**item) for item in _load_list(entity.sections_json)]
-    competencies = [
-        AssessmentCompetencyRead(
-            id=item.id,
-            code=item.code,
-            description=item.description,
-            indicators=_load_list(item.indicators_json),
-            levels=_load_list(item.levels_json),
-        )
-        for item in entity.competencies
-    ]
-    topics = json.loads(entity.program.topics_json or "[]")
-    entity.validation_json = _dump(validate_assessment_fund(sections, competencies, topics).model_dump())
+    _recalculate_validation(entity)
     db.commit()
     db.refresh(entity)
     return fund_to_schema(entity)
+
+
+def create_competency_for_user(
+    db: Session,
+    fund_id: str,
+    user: models.User,
+    payload: AssessmentCompetencyCreateRequest,
+) -> AssessmentFundResponse | None:
+    fund = _get_fund_entity(db, fund_id)
+    if fund is None or not user_can_access_program(user, fund.program):
+        return None
+
+    code = payload.code.strip()
+    if any(item.code.lower() == code.lower() for item in fund.competencies):
+        raise ValueError("Компетенция с таким кодом уже существует.")
+
+    db.add(
+        models.AssessmentCompetency(
+            id=str(uuid4()),
+            fund_id=fund.id,
+            code=code,
+            description=payload.description.strip(),
+            indicators_json=_dump([item.strip() for item in payload.indicators if item.strip()]),
+            levels_json=_dump([item.strip() for item in payload.levels if item.strip()]),
+        )
+    )
+    db.flush()
+    _recalculate_validation(fund)
+    db.commit()
+    return fund_to_schema(_get_fund_entity(db, fund.id))
+
+
+def update_competency_for_user(
+    db: Session,
+    fund_id: str,
+    competency_id: str,
+    user: models.User,
+    payload: AssessmentCompetencyUpdateRequest,
+) -> AssessmentFundResponse | None:
+    fund = _get_fund_entity(db, fund_id)
+    if fund is None or not user_can_access_program(user, fund.program):
+        return None
+    competency = db.get(models.AssessmentCompetency, competency_id)
+    if competency is None or competency.fund_id != fund.id:
+        return None
+
+    if payload.code is not None:
+        new_code = payload.code.strip()
+        if any(item.id != competency.id and item.code.lower() == new_code.lower() for item in fund.competencies):
+            raise ValueError("Компетенция с таким кодом уже существует.")
+        old_code = competency.code
+        competency.code = new_code
+        for item in fund.items:
+            if item.competency_code == old_code:
+                item.competency_code = new_code
+    if payload.description is not None:
+        competency.description = payload.description.strip()
+    if payload.indicators is not None:
+        competency.indicators_json = _dump([item.strip() for item in payload.indicators if item.strip()])
+    if payload.levels is not None:
+        competency.levels_json = _dump([item.strip() for item in payload.levels if item.strip()])
+
+    _recalculate_validation(fund)
+    db.commit()
+    return fund_to_schema(_get_fund_entity(db, fund.id))
+
+
+def delete_competency_for_user(
+    db: Session,
+    fund_id: str,
+    competency_id: str,
+    user: models.User,
+) -> AssessmentFundResponse | None:
+    fund = _get_fund_entity(db, fund_id)
+    if fund is None or not user_can_access_program(user, fund.program):
+        return None
+    competency = db.get(models.AssessmentCompetency, competency_id)
+    if competency is None or competency.fund_id != fund.id:
+        return None
+
+    deleted_code = competency.code
+    db.delete(competency)
+    for item in fund.items:
+        if item.competency_code == deleted_code:
+            item.competency_code = ""
+            item.indicator = ""
+    db.flush()
+    _recalculate_validation(fund)
+    db.commit()
+    return fund_to_schema(_get_fund_entity(db, fund.id))
+
+
+def _recalculate_validation(entity: models.AssessmentFund) -> None:
+    sections = [AssessmentFundSection(**item) for item in _load_list(entity.sections_json)]
+    competencies = [competency_to_schema(item) for item in entity.competencies]
+    topics = json.loads(entity.program.topics_json or "[]")
+    entity.validation_json = _dump(validate_assessment_fund(sections, competencies, topics).model_dump())
 
 
 def _get_fund_entity(db: Session, fund_id: str) -> models.AssessmentFund | None:
@@ -184,6 +258,7 @@ def _get_fund_entity(db: Session, fund_id: str) -> models.AssessmentFund | None:
         .where(models.AssessmentFund.id == fund_id)
         .options(
             selectinload(models.AssessmentFund.competencies),
+            selectinload(models.AssessmentFund.items),
             selectinload(models.AssessmentFund.program),
         )
     )

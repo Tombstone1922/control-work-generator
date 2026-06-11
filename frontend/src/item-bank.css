@@ -39,6 +39,63 @@
   font-size: 13px;
 }
 
+.itemValidation {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #e0e6f0;
+  border-radius: 18px;
+  background: #fbfcff;
+}
+
+.coverageTableWrap {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.coverageTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.coverageTable th,
+.coverageTable td {
+  padding: 10px 12px;
+  border: 1px solid #dfe6f3;
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.coverageTable th {
+  background: #f2f5ff;
+  color: #31436b;
+}
+
+.duplicateList {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.duplicateItem {
+  padding: 12px;
+  border: 1px solid #f0d7a4;
+  border-radius: 14px;
+  background: #fffaf0;
+}
+
+.duplicateItem p {
+  margin: 8px 0 4px;
+  color: #5d687e;
+  line-height: 1.45;
+}
+
+.duplicateItem small {
+  color: #7b6b43;
+}
+
 .itemBankGrid {
   display: grid;
   grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.6fr);

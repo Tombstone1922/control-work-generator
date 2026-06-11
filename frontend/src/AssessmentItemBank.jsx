@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
   const [validation, setValidation] = useState(null);
+  const [localModelStatus, setLocalModelStatus] = useState(null);
+  const [lastGeneration, setLastGeneration] = useState(null);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [isLoading, setLoading] = useState(false);
@@ -10,8 +12,13 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   const [isSaving, setSaving] = useState(false);
   const [isValidating, setValidating] = useState(false);
   const [isExporting, setExporting] = useState(false);
+  const [isCheckingModel, setCheckingModel] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [maxItemsPerSection, setMaxItemsPerSection] = useState(20);
+  const [generationMode, setGenerationMode] = useState('template');
+  const [ollamaModel, setOllamaModel] = useState('');
+  const [ollamaMaxItems, setOllamaMaxItems] = useState(8);
+  const [fallbackToTemplate, setFallbackToTemplate] = useState(true);
 
   const enabledSections = useMemo(
     () => sections.filter((section) => section.enabled && !['competency_matrix', 'grading_rubric'].includes(section.assessment_type)),
@@ -38,7 +45,9 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     setSelectedSectionCode('');
     setSelectedItemId('');
     setValidation(null);
+    setLastGeneration(null);
     loadItems();
+    checkLocalModel();
   }, [fund?.fund_id]);
 
   async function loadItems(sectionCode = '') {
@@ -58,6 +67,25 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     }
   }
 
+  async function checkLocalModel(showSuccess = false) {
+    setCheckingModel(true);
+    try {
+      const response = await api.get('/api/assessment-items/local-model/status');
+      setLocalModelStatus(response.data);
+      if (!ollamaModel && response.data.default_model) setOllamaModel(response.data.default_model);
+      if (showSuccess) {
+        setSuccess(response.data.available
+          ? `Локальная модель доступна. Найдено моделей: ${response.data.models.length}.`
+          : 'Локальная модель недоступна. Можно продолжить работу с шаблонным генератором.');
+      }
+    } catch (err) {
+      setLocalModelStatus({ available: false, models: [], default_model: '', error: err.response?.data?.detail || 'Не удалось проверить Ollama.' });
+      if (showSuccess) setError(err.response?.data?.detail || 'Не удалось проверить Ollama.');
+    } finally {
+      setCheckingModel(false);
+    }
+  }
+
   async function generateItems() {
     if (!fund?.fund_id) return;
     setGenerating(true);
@@ -68,12 +96,22 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         section_code: selectedSectionCode || null,
         replace_existing: replaceExisting,
         max_items_per_section: Number(maxItemsPerSection),
+        generation_mode: generationMode,
+        ollama_model: ollamaModel || null,
+        ollama_max_items: Number(ollamaMaxItems),
+        fallback_to_template: fallbackToTemplate,
       });
-      setItems(response.data);
-      setSelectedItemId(response.data[0]?.id || '');
+      setItems(response.data.items);
+      setSelectedItemId(response.data.items[0]?.id || '');
+      setLastGeneration(response.data);
       await onFundRefresh();
       await validateItems(false);
-      setSuccess(selectedSectionCode ? 'Задания выбранного раздела сформированы.' : 'Банк заданий ФОС сформирован.');
+      const message = response.data.used_mode === 'template'
+        ? 'Банк заданий сформирован шаблонным генератором.'
+        : response.data.used_mode === 'ollama'
+          ? 'Банк заданий полностью сформирован локальной LLM.'
+          : 'Банк заданий сформирован в гибридном режиме.';
+      setSuccess(message);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
     } finally {
@@ -168,7 +206,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       <div className="sectionHeader">
         <div>
           <h3>Банк заданий ФОС</h3>
-          <p className="muted">Локальный шаблонный генератор создает редактируемые заготовки с привязкой к темам и компетенциям.</p>
+          <p className="muted">Формируйте задания шаблонно, гибридно или через локальную LLM Ollama без передачи РПД во внешние сервисы.</p>
         </div>
         <div className="actionGroup">
           <button className="secondary" type="button" onClick={() => loadItems(selectedSectionCode)} disabled={isLoading}>
@@ -182,6 +220,22 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
           </button>
         </div>
       </div>
+
+      <LocalModelPanel
+        status={localModelStatus}
+        isChecking={isCheckingModel}
+        generationMode={generationMode}
+        setGenerationMode={setGenerationMode}
+        ollamaModel={ollamaModel}
+        setOllamaModel={setOllamaModel}
+        ollamaMaxItems={ollamaMaxItems}
+        setOllamaMaxItems={setOllamaMaxItems}
+        fallbackToTemplate={fallbackToTemplate}
+        setFallbackToTemplate={setFallbackToTemplate}
+        checkLocalModel={checkLocalModel}
+      />
+
+      {lastGeneration && <GenerationSummary generation={lastGeneration} />}
 
       <div className="itemBankToolbar">
         <label>
@@ -222,6 +276,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
             >
               <strong>{index + 1}. {item.topic}</strong>
               <span>{item.assessment_type} · {item.difficulty} · {item.competency_code || 'без компетенции'}</span>
+              <small>{item.source_kind === 'ollama' ? 'локальная LLM' : 'шаблон'}</small>
             </button>
           )) : <p className="muted">Задания еще не сформированы.</p>}
         </div>
@@ -250,6 +305,72 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
           ) : <p className="muted">Выберите задание слева.</p>}
         </div>
       </div>
+    </section>
+  );
+}
+
+function LocalModelPanel({ status, isChecking, generationMode, setGenerationMode, ollamaModel, setOllamaModel, ollamaMaxItems, setOllamaMaxItems, fallbackToTemplate, setFallbackToTemplate, checkLocalModel }) {
+  const available = Boolean(status?.available);
+  return (
+    <section className="localModelPanel">
+      <div className="questionTopline">
+        <div>
+          <h3>Локальный интеллектуальный генератор</h3>
+          <p className="muted">Ollama запускается локально. РПД остается внутри закрытого контура.</p>
+        </div>
+        <button className="secondary smallButton" type="button" onClick={() => checkLocalModel(true)} disabled={isChecking}>
+          {isChecking ? 'Проверяем...' : 'Проверить Ollama'}
+        </button>
+      </div>
+
+      <div className={`modelStatus ${available ? 'modelStatusOk' : 'modelStatusOffline'}`}>
+        <strong>{available ? 'Ollama доступна' : 'Ollama недоступна'}</strong>
+        <span>{available ? `Моделей найдено: ${status.models.length}` : (status?.error || 'Запустите Ollama или используйте шаблонный режим.')}</span>
+      </div>
+
+      <div className="localModelGrid">
+        <label>
+          Режим генерации
+          <select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}>
+            <option value="template">Шаблонный — быстро и без модели</option>
+            <option value="hybrid">Гибридный — часть заданий улучшает Ollama</option>
+            <option value="ollama">Ollama — все задания через локальную LLM</option>
+          </select>
+        </label>
+
+        <label>
+          Локальная модель
+          <select value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)} disabled={!available}>
+            <option value="">Автоматический выбор</option>
+            {(status?.models || []).map((model) => <option key={model} value={model}>{model}</option>)}
+          </select>
+        </label>
+
+        <label>
+          Заданий через LLM в гибридном режиме
+          <input type="number" min="1" max="50" value={ollamaMaxItems} onChange={(event) => setOllamaMaxItems(Number(event.target.value))} disabled={generationMode !== 'hybrid'} />
+        </label>
+
+        <label className="toggleLabel localModelCheckbox">
+          <input type="checkbox" checked={fallbackToTemplate} onChange={(event) => setFallbackToTemplate(event.target.checked)} />
+          Использовать шаблоны при ошибке Ollama
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function GenerationSummary({ generation }) {
+  return (
+    <section className="generationSummary">
+      <strong>Результат последней генерации</strong>
+      <div className="itemBankStats">
+        <span>Запрошенный режим: <strong>{generation.requested_mode}</strong></span>
+        <span>Использованный режим: <strong>{generation.used_mode}</strong></span>
+        <span>Через Ollama: <strong>{generation.ollama_generated_items}</strong></span>
+        <span>По шаблонам: <strong>{generation.template_generated_items}</strong></span>
+      </div>
+      {generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AssessmentItemBank from './AssessmentItemBank.jsx';
+import CompetencyMatrixEditor from './CompetencyMatrixEditor.jsx';
 
 const SECTION_LABELS = {
   competency_matrix: 'Матрица компетенций',
@@ -278,19 +279,14 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
               </div>
             </div>
 
-            <div>
-              <h3>Матрица компетенций</h3>
-              <div className="fosCompetencies">
-                {fund.competencies.length ? fund.competencies.map((competency) => (
-                  <article className="fosCompetency" key={competency.id}>
-                    <strong>{competency.code}</strong>
-                    <p>{competency.description}</p>
-                    <small>{competency.indicators.join(' ')}</small>
-                    <div className="fosLevelTags">{competency.levels.map((level) => <span key={level}>{level}</span>)}</div>
-                  </article>
-                )) : <p className="muted">Компетенции не распознаны. Заполнение вручную будет добавлено следующим этапом.</p>}
-              </div>
-            </div>
+            <CompetencyMatrixEditor
+              api={api}
+              fund={fund}
+              setFund={setFund}
+              setError={setError}
+              setSuccess={setSuccess}
+              onFundRefresh={refreshCurrentFund}
+            />
           </div>
 
           {!hasUnsavedChanges && (

@@ -5,6 +5,7 @@ import './styles.css';
 import './analysis.css';
 import './fos.css';
 import './item-bank.css';
+import './competency-editor.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

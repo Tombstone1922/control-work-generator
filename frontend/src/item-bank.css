@@ -4,7 +4,7 @@
   border-top: 1px solid #e2e8f5;
 }
 
-.localModelPanel,
+.trainingDatasetPanel,
 .generationSummary {
   margin: 16px 0;
   padding: 16px;
@@ -13,45 +13,31 @@
   background: #f9fbff;
 }
 
-.modelStatus {
+.trainingDatasetPanel {
   display: grid;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
 }
 
-.modelStatusOk {
-  border: 1px solid #cdebd4;
-  background: #effaf2;
-  color: #1d6b35;
+.trainingFeedback {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #dbe4f5;
+  border-radius: 16px;
+  background: #f9fbff;
 }
 
-.modelStatusOffline {
-  border: 1px solid #f2d7a3;
-  background: #fff8e5;
-  color: #7a560d;
+.trainingFeedback h3 {
+  margin-bottom: 6px;
 }
 
-.modelStatus span {
-  color: inherit;
-  font-size: 13px;
-  line-height: 1.4;
+.trainingFeedback textarea {
+  min-height: 90px;
 }
 
-.localModelGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.localModelGrid label {
-  margin-bottom: 0;
-}
-
-.localModelCheckbox {
-  align-self: end;
-  min-height: 44px;
+.trainingActions {
+  justify-content: flex-end;
 }
 
 .itemBankToolbar {
@@ -220,11 +206,15 @@
   .itemBankToolbar,
   .itemBankGrid,
   .itemBankEditor .miniGrid,
-  .localModelGrid {
+  .trainingDatasetPanel {
     grid-template-columns: 1fr;
   }
 
   .itemBankCheckbox {
     padding-bottom: 0;
+  }
+
+  .trainingActions {
+    justify-content: flex-start;
   }
 }

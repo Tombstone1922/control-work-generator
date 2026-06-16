@@ -87,6 +87,10 @@ class AssessmentFund(Base):
         back_populates="fund",
         cascade="all, delete-orphan",
     )
+    training_examples: Mapped[list["TrainingExample"]] = relationship(
+        back_populates="fund",
+        cascade="all, delete-orphan",
+    )
 
 
 class AssessmentCompetency(Base):
@@ -124,3 +128,28 @@ class AssessmentItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     fund: Mapped[AssessmentFund] = relationship(back_populates="items")
+
+
+class TrainingExample(Base):
+    __tablename__ = "training_examples"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fund_id: Mapped[str] = mapped_column(ForeignKey("assessment_funds.id"), nullable=False, index=True)
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("assessment_items.id"), nullable=True, index=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    discipline_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    topic: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    competency_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    indicator: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    assessment_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    item_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    difficulty: Mapped[str] = mapped_column(String(32), nullable=False, default="medium")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    criteria_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    quality_label: Mapped[str] = mapped_column(String(32), nullable=False, default="good")
+    teacher_comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="expert_feedback")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    fund: Mapped[AssessmentFund] = relationship(back_populates="training_examples")

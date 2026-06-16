@@ -193,6 +193,41 @@ class LocalModelStatusResponse(BaseModel):
     error: str = ""
 
 
+class TrainingExampleCreateRequest(BaseModel):
+    quality_label: str = Field(default="good", description="good | bad | needs_revision")
+    teacher_comment: str = ""
+
+
+class TrainingExampleRead(BaseModel):
+    id: str
+    fund_id: str
+    item_id: str | None = None
+    discipline_name: str
+    topic: str
+    competency_code: str = ""
+    indicator: str = ""
+    assessment_type: str
+    item_type: str
+    difficulty: str
+    text: str
+    answer: str = ""
+    criteria: List[str] = Field(default_factory=list)
+    quality_label: str
+    teacher_comment: str = ""
+    source: str = "expert_feedback"
+    created_at: str
+
+
+class TrainingDatasetStats(BaseModel):
+    total_examples: int = 0
+    good_examples: int = 0
+    bad_examples: int = 0
+    revision_examples: int = 0
+    topics_count: int = 0
+    competencies_count: int = 0
+    assessment_types_count: int = 0
+
+
 class GenerationRequest(BaseModel):
     program_id: str
     variants_count: int = Field(default=2, ge=1, le=20)

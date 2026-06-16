@@ -3,22 +3,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
   const [validation, setValidation] = useState(null);
-  const [localModelStatus, setLocalModelStatus] = useState(null);
-  const [lastGeneration, setLastGeneration] = useState(null);
+  const [trainingStats, setTrainingStats] = useState(null);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
+  const [teacherComment, setTeacherComment] = useState('');
   const [isLoading, setLoading] = useState(false);
   const [isGenerating, setGenerating] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [isValidating, setValidating] = useState(false);
   const [isExporting, setExporting] = useState(false);
-  const [isCheckingModel, setCheckingModel] = useState(false);
+  const [isTraining, setTraining] = useState(false);
+  const [isExportingDataset, setExportingDataset] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [maxItemsPerSection, setMaxItemsPerSection] = useState(20);
-  const [generationMode, setGenerationMode] = useState('template');
-  const [ollamaModel, setOllamaModel] = useState('');
-  const [ollamaMaxItems, setOllamaMaxItems] = useState(8);
-  const [fallbackToTemplate, setFallbackToTemplate] = useState(true);
 
   const enabledSections = useMemo(
     () => sections.filter((section) => section.enabled && !['competency_matrix', 'grading_rubric'].includes(section.assessment_type)),
@@ -45,10 +42,14 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     setSelectedSectionCode('');
     setSelectedItemId('');
     setValidation(null);
-    setLastGeneration(null);
+    setTeacherComment('');
     loadItems();
-    checkLocalModel();
+    loadTrainingStats();
   }, [fund?.fund_id]);
+
+  useEffect(() => {
+    setTeacherComment('');
+  }, [selectedItemId]);
 
   async function loadItems(sectionCode = '') {
     if (!fund?.fund_id) return;
@@ -67,22 +68,13 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     }
   }
 
-  async function checkLocalModel(showSuccess = false) {
-    setCheckingModel(true);
+  async function loadTrainingStats() {
+    if (!fund?.fund_id) return;
     try {
-      const response = await api.get('/api/assessment-items/local-model/status');
-      setLocalModelStatus(response.data);
-      if (!ollamaModel && response.data.default_model) setOllamaModel(response.data.default_model);
-      if (showSuccess) {
-        setSuccess(response.data.available
-          ? `Локальная модель доступна. Найдено моделей: ${response.data.models.length}.`
-          : 'Локальная модель недоступна. Можно продолжить работу с шаблонным генератором.');
-      }
+      const response = await api.get('/api/training-examples/stats', { params: { fund_id: fund.fund_id } });
+      setTrainingStats(response.data);
     } catch (err) {
-      setLocalModelStatus({ available: false, models: [], default_model: '', error: err.response?.data?.detail || 'Не удалось проверить Ollama.' });
-      if (showSuccess) setError(err.response?.data?.detail || 'Не удалось проверить Ollama.');
-    } finally {
-      setCheckingModel(false);
+      setTrainingStats(null);
     }
   }
 
@@ -96,22 +88,15 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         section_code: selectedSectionCode || null,
         replace_existing: replaceExisting,
         max_items_per_section: Number(maxItemsPerSection),
-        generation_mode: generationMode,
-        ollama_model: ollamaModel || null,
-        ollama_max_items: Number(ollamaMaxItems),
-        fallback_to_template: fallbackToTemplate,
+        generation_mode: 'template',
+        fallback_to_template: true,
       });
-      setItems(response.data.items);
-      setSelectedItemId(response.data.items[0]?.id || '');
-      setLastGeneration(response.data);
+      const generatedItems = response.data.items || response.data;
+      setItems(generatedItems);
+      setSelectedItemId(generatedItems[0]?.id || '');
       await onFundRefresh();
       await validateItems(false);
-      const message = response.data.used_mode === 'template'
-        ? 'Банк заданий сформирован шаблонным генератором.'
-        : response.data.used_mode === 'ollama'
-          ? 'Банк заданий полностью сформирован локальной LLM.'
-          : 'Банк заданий сформирован в гибридном режиме.';
-      setSuccess(message);
+      setSuccess('Банк заданий сформирован. После экспертной правки сохраняйте удачные и неудачные задания в обучающую выборку.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
     } finally {
@@ -156,6 +141,52 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     }
   }
 
+  async function addTrainingExample(qualityLabel) {
+    if (!selectedItem) return;
+    setTraining(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.post(`/api/training-examples/${fund.fund_id}/items/${selectedItem.id}`, {
+        quality_label: qualityLabel,
+        teacher_comment: teacherComment,
+      });
+      await loadTrainingStats();
+      const label = qualityLabel === 'good' ? 'хороший пример' : qualityLabel === 'bad' ? 'плохой пример' : 'пример на доработку';
+      setSuccess(`Задание сохранено в обучающую выборку как ${label}.`);
+      setTeacherComment('');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось сохранить обучающий пример.');
+    } finally {
+      setTraining(false);
+    }
+  }
+
+  async function downloadTrainingDataset() {
+    if (!fund?.fund_id) return;
+    setExportingDataset(true);
+    setError('');
+    try {
+      const response = await api.get('/api/training-examples/export/jsonl', {
+        params: { fund_id: fund.fund_id },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `training_dataset_${fund.discipline_name || fund.fund_id}.jsonl`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('Обучающая выборка JSONL сформирована и скачана.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось экспортировать обучающую выборку.');
+    } finally {
+      setExportingDataset(false);
+    }
+  }
+
   function patchSelectedItem(patch) {
     setItems((current) => current.map((item) => item.id === selectedItemId ? { ...item, ...patch } : item));
   }
@@ -177,7 +208,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       });
       setItems((current) => current.map((item) => item.id === response.data.id ? response.data : item));
       await validateItems(false);
-      setSuccess('Задание сохранено.');
+      setSuccess('Задание сохранено. Теперь его можно добавить в обучающую выборку.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить задание.');
     } finally {
@@ -206,7 +237,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       <div className="sectionHeader">
         <div>
           <h3>Банк заданий ФОС</h3>
-          <p className="muted">Формируйте задания шаблонно, гибридно или через локальную LLM Ollama без передачи РПД во внешние сервисы.</p>
+          <p className="muted">Формируйте задания, редактируйте их экспертно и сохраняйте хорошие/плохие примеры для последующего обучения модели.</p>
         </div>
         <div className="actionGroup">
           <button className="secondary" type="button" onClick={() => loadItems(selectedSectionCode)} disabled={isLoading}>
@@ -221,21 +252,11 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         </div>
       </div>
 
-      <LocalModelPanel
-        status={localModelStatus}
-        isChecking={isCheckingModel}
-        generationMode={generationMode}
-        setGenerationMode={setGenerationMode}
-        ollamaModel={ollamaModel}
-        setOllamaModel={setOllamaModel}
-        ollamaMaxItems={ollamaMaxItems}
-        setOllamaMaxItems={setOllamaMaxItems}
-        fallbackToTemplate={fallbackToTemplate}
-        setFallbackToTemplate={setFallbackToTemplate}
-        checkLocalModel={checkLocalModel}
+      <TrainingDatasetPanel
+        stats={trainingStats}
+        downloadTrainingDataset={downloadTrainingDataset}
+        isExportingDataset={isExportingDataset}
       />
-
-      {lastGeneration && <GenerationSummary generation={lastGeneration} />}
 
       <div className="itemBankToolbar">
         <label>
@@ -276,7 +297,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
             >
               <strong>{index + 1}. {item.topic}</strong>
               <span>{item.assessment_type} · {item.difficulty} · {item.competency_code || 'без компетенции'}</span>
-              <small>{item.source_kind === 'ollama' ? 'локальная LLM' : 'шаблон'}</small>
+              <small>{item.source_kind || 'template'}</small>
             </button>
           )) : <p className="muted">Задания еще не сформированы.</p>}
         </div>
@@ -301,6 +322,20 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
               <label>Индикатор<textarea value={selectedItem.indicator} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
               <label>Критерии оценивания<textarea value={selectedItem.criteria.join('\n')} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
               <p className="muted">Источник: {selectedItem.source_context || 'не указан'} · способ формирования: {selectedItem.source_kind}</p>
+
+              <section className="trainingFeedback">
+                <h3>Экспертная разметка для самообучения</h3>
+                <p className="muted">После ручной правки сохраните задание как хороший пример, плохой пример или пример, требующий доработки.</p>
+                <label>
+                  Комментарий преподавателя
+                  <textarea value={teacherComment} onChange={(event) => setTeacherComment(event.target.value)} placeholder="Например: удачная практическая формулировка; не хватает эталонного ответа; слишком общий вопрос..." />
+                </label>
+                <div className="actionGroup trainingActions">
+                  <button className="secondary" type="button" onClick={() => addTrainingExample('needs_revision')} disabled={isTraining}>Нужно доработать</button>
+                  <button className="danger" type="button" onClick={() => addTrainingExample('bad')} disabled={isTraining}>Плохой пример</button>
+                  <button className="primary" type="button" onClick={() => addTrainingExample('good')} disabled={isTraining}>Хороший пример</button>
+                </div>
+              </section>
             </>
           ) : <p className="muted">Выберите задание слева.</p>}
         </div>
@@ -309,68 +344,24 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   );
 }
 
-function LocalModelPanel({ status, isChecking, generationMode, setGenerationMode, ollamaModel, setOllamaModel, ollamaMaxItems, setOllamaMaxItems, fallbackToTemplate, setFallbackToTemplate, checkLocalModel }) {
-  const available = Boolean(status?.available);
+function TrainingDatasetPanel({ stats, downloadTrainingDataset, isExportingDataset }) {
   return (
-    <section className="localModelPanel">
-      <div className="questionTopline">
-        <div>
-          <h3>Локальный интеллектуальный генератор</h3>
-          <p className="muted">Ollama запускается локально. РПД остается внутри закрытого контура.</p>
-        </div>
-        <button className="secondary smallButton" type="button" onClick={() => checkLocalModel(true)} disabled={isChecking}>
-          {isChecking ? 'Проверяем...' : 'Проверить Ollama'}
-        </button>
+    <section className="trainingDatasetPanel">
+      <div>
+        <h3>Обучающая выборка</h3>
+        <p className="muted">Здесь накапливаются экспертно подтвержденные примеры для будущего дообучения генератора.</p>
       </div>
-
-      <div className={`modelStatus ${available ? 'modelStatusOk' : 'modelStatusOffline'}`}>
-        <strong>{available ? 'Ollama доступна' : 'Ollama недоступна'}</strong>
-        <span>{available ? `Моделей найдено: ${status.models.length}` : (status?.error || 'Запустите Ollama или используйте шаблонный режим.')}</span>
-      </div>
-
-      <div className="localModelGrid">
-        <label>
-          Режим генерации
-          <select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}>
-            <option value="template">Шаблонный — быстро и без модели</option>
-            <option value="hybrid">Гибридный — часть заданий улучшает Ollama</option>
-            <option value="ollama">Ollama — все задания через локальную LLM</option>
-          </select>
-        </label>
-
-        <label>
-          Локальная модель
-          <select value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)} disabled={!available}>
-            <option value="">Автоматический выбор</option>
-            {(status?.models || []).map((model) => <option key={model} value={model}>{model}</option>)}
-          </select>
-        </label>
-
-        <label>
-          Заданий через LLM в гибридном режиме
-          <input type="number" min="1" max="50" value={ollamaMaxItems} onChange={(event) => setOllamaMaxItems(Number(event.target.value))} disabled={generationMode !== 'hybrid'} />
-        </label>
-
-        <label className="toggleLabel localModelCheckbox">
-          <input type="checkbox" checked={fallbackToTemplate} onChange={(event) => setFallbackToTemplate(event.target.checked)} />
-          Использовать шаблоны при ошибке Ollama
-        </label>
-      </div>
-    </section>
-  );
-}
-
-function GenerationSummary({ generation }) {
-  return (
-    <section className="generationSummary">
-      <strong>Результат последней генерации</strong>
       <div className="itemBankStats">
-        <span>Запрошенный режим: <strong>{generation.requested_mode}</strong></span>
-        <span>Использованный режим: <strong>{generation.used_mode}</strong></span>
-        <span>Через Ollama: <strong>{generation.ollama_generated_items}</strong></span>
-        <span>По шаблонам: <strong>{generation.template_generated_items}</strong></span>
+        <span>Всего: <strong>{stats?.total_examples || 0}</strong></span>
+        <span>Хороших: <strong>{stats?.good_examples || 0}</strong></span>
+        <span>Плохих: <strong>{stats?.bad_examples || 0}</strong></span>
+        <span>На доработку: <strong>{stats?.revision_examples || 0}</strong></span>
+        <span>Тем: <strong>{stats?.topics_count || 0}</strong></span>
+        <span>Компетенций: <strong>{stats?.competencies_count || 0}</strong></span>
       </div>
-      {generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+      <button className="download" type="button" onClick={downloadTrainingDataset} disabled={isExportingDataset}>
+        {isExportingDataset ? 'Экспортируем...' : 'Скачать JSONL датасет'}
+      </button>
     </section>
   );
 }

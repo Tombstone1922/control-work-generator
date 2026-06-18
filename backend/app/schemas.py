@@ -169,8 +169,9 @@ class AssessmentItemsGenerateRequest(BaseModel):
     section_code: str | None = None
     replace_existing: bool = False
     max_items_per_section: int = Field(default=40, ge=1, le=200)
-    generation_mode: str = Field(default="template", description="template | learned | hybrid")
+    generation_mode: str = Field(default="template", description="template | learned | narrow_llm | hybrid")
     learned_max_items: int = Field(default=12, ge=1, le=200)
+    narrow_max_items: int = Field(default=12, ge=1, le=200)
     fallback_to_template: bool = True
 
 
@@ -179,7 +180,9 @@ class AssessmentItemsGenerateResponse(BaseModel):
     requested_mode: str
     used_mode: str
     learned_generated_items: int = 0
+    narrow_llm_generated_items: int = 0
     template_generated_items: int = 0
+    model_version: str = ""
     warnings: List[str] = Field(default_factory=list)
 
 

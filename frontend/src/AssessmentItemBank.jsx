@@ -4,9 +4,13 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   const [items, setItems] = useState([]);
   const [validation, setValidation] = useState(null);
   const [trainingStats, setTrainingStats] = useState(null);
+  const [generationSummary, setGenerationSummary] = useState(null);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [teacherComment, setTeacherComment] = useState('');
+  const [generationMode, setGenerationMode] = useState('template');
+  const [learnedMaxItems, setLearnedMaxItems] = useState(12);
+  const [fallbackToTemplate, setFallbackToTemplate] = useState(true);
   const [isLoading, setLoading] = useState(false);
   const [isGenerating, setGenerating] = useState(false);
   const [isSaving, setSaving] = useState(false);
@@ -42,6 +46,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     setSelectedSectionCode('');
     setSelectedItemId('');
     setValidation(null);
+    setGenerationSummary(null);
     setTeacherComment('');
     loadItems();
     loadTrainingStats();
@@ -88,15 +93,23 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         section_code: selectedSectionCode || null,
         replace_existing: replaceExisting,
         max_items_per_section: Number(maxItemsPerSection),
-        generation_mode: 'template',
-        fallback_to_template: true,
+        generation_mode: generationMode,
+        learned_max_items: Number(learnedMaxItems),
+        fallback_to_template: fallbackToTemplate,
       });
       const generatedItems = response.data.items || response.data;
       setItems(generatedItems);
       setSelectedItemId(generatedItems[0]?.id || '');
+      setGenerationSummary(response.data.items ? response.data : null);
       await onFundRefresh();
       await validateItems(false);
-      setSuccess('Банк заданий сформирован. После экспертной правки сохраняйте удачные и неудачные задания в обучающую выборку.');
+      if (response.data.used_mode === 'learned') {
+        setSuccess('Банк заданий сформирован на основе обучающей выборки.');
+      } else if (response.data.used_mode === 'hybrid') {
+        setSuccess('Банк заданий сформирован в гибридном режиме: обучающие примеры + шаблоны.');
+      } else {
+        setSuccess('Банк заданий сформирован шаблонным генератором. После экспертной правки сохраняйте примеры в обучающую выборку.');
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
     } finally {
@@ -258,6 +271,18 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         isExportingDataset={isExportingDataset}
       />
 
+      <LearningModePanel
+        generationMode={generationMode}
+        setGenerationMode={setGenerationMode}
+        learnedMaxItems={learnedMaxItems}
+        setLearnedMaxItems={setLearnedMaxItems}
+        fallbackToTemplate={fallbackToTemplate}
+        setFallbackToTemplate={setFallbackToTemplate}
+        stats={trainingStats}
+      />
+
+      {generationSummary && <GenerationSummary generation={generationSummary} />}
+
       <div className="itemBankToolbar">
         <label>
           Раздел ФОС
@@ -297,7 +322,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
             >
               <strong>{index + 1}. {item.topic}</strong>
               <span>{item.assessment_type} · {item.difficulty} · {item.competency_code || 'без компетенции'}</span>
-              <small>{item.source_kind || 'template'}</small>
+              <small>{sourceKindLabel(item.source_kind)}</small>
             </button>
           )) : <p className="muted">Задания еще не сформированы.</p>}
         </div>
@@ -321,7 +346,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
               </div>
               <label>Индикатор<textarea value={selectedItem.indicator} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
               <label>Критерии оценивания<textarea value={selectedItem.criteria.join('\n')} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
-              <p className="muted">Источник: {selectedItem.source_context || 'не указан'} · способ формирования: {selectedItem.source_kind}</p>
+              <p className="muted">Источник: {selectedItem.source_context || 'не указан'} · способ формирования: {sourceKindLabel(selectedItem.source_kind)}</p>
 
               <section className="trainingFeedback">
                 <h3>Экспертная разметка для самообучения</h3>
@@ -362,6 +387,54 @@ function TrainingDatasetPanel({ stats, downloadTrainingDataset, isExportingDatas
       <button className="download" type="button" onClick={downloadTrainingDataset} disabled={isExportingDataset}>
         {isExportingDataset ? 'Экспортируем...' : 'Скачать JSONL датасет'}
       </button>
+    </section>
+  );
+}
+
+function LearningModePanel({ generationMode, setGenerationMode, learnedMaxItems, setLearnedMaxItems, fallbackToTemplate, setFallbackToTemplate, stats }) {
+  const hasGoodExamples = (stats?.good_examples || 0) > 0;
+  return (
+    <section className="learningModePanel">
+      <div>
+        <h3>Генерация с учетом обучающей выборки</h3>
+        <p className="muted">Режим learned использует хорошие примеры как образцы, а плохие — как анти-примеры. Это первый слой самообучения без внешней нейросети.</p>
+      </div>
+      <div className="learningModeGrid">
+        <label>
+          Режим генерации
+          <select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}>
+            <option value="template">Шаблонный генератор</option>
+            <option value="learned">По обучающим примерам</option>
+            <option value="hybrid">Гибридный режим</option>
+          </select>
+        </label>
+        <label>
+          Заданий по обучающим примерам
+          <input type="number" min="1" max="200" value={learnedMaxItems} onChange={(event) => setLearnedMaxItems(Number(event.target.value))} disabled={generationMode !== 'hybrid'} />
+        </label>
+        <label className="toggleLabel itemBankCheckbox">
+          <input type="checkbox" checked={fallbackToTemplate} onChange={(event) => setFallbackToTemplate(event.target.checked)} />
+          Если примеров мало — использовать шаблоны
+        </label>
+      </div>
+      {!hasGoodExamples && generationMode !== 'template' && (
+        <div className="notice">Для режима обучающей выборки нужен хотя бы один пример с меткой “Хороший пример”.</div>
+      )}
+    </section>
+  );
+}
+
+function GenerationSummary({ generation }) {
+  return (
+    <section className="generationSummary">
+      <strong>Результат последней генерации</strong>
+      <div className="itemBankStats">
+        <span>Запрошенный режим: <strong>{generation.requested_mode}</strong></span>
+        <span>Использованный режим: <strong>{generation.used_mode}</strong></span>
+        <span>По обучающим примерам: <strong>{generation.learned_generated_items}</strong></span>
+        <span>По шаблонам: <strong>{generation.template_generated_items}</strong></span>
+      </div>
+      {generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
     </section>
   );
 }
@@ -423,6 +496,10 @@ function ValidationDashboard({ validation, sectionMap }) {
       )}
     </section>
   );
+}
+
+function sourceKindLabel(value) {
+  return ({ template: 'шаблон', learned_example: 'по обучающему примеру' }[value] || value || 'шаблон');
 }
 
 function Metric({ value, label }) {

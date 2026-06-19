@@ -8,6 +8,7 @@ SECTION_PATTERNS = {
     "Результаты обучения": ("результаты обучения", "знать", "уметь", "владеть"),
     "Содержание дисциплины": ("содержание дисциплины", "тематический план", "разделы дисциплины", "темы дисциплины"),
     "Оценочные материалы": ("оценочные материалы", "фонд оценочных средств", "контрольные задания"),
+    "Литература": ("литература", "список литературы", "основная литература", "дополнительная литература", "перечень ресурсов"),
 }
 
 NOISE_WORDS = (
@@ -15,6 +16,15 @@ NOISE_WORDS = (
     "страница", "лист согласования", "разработчик", "рецензент", "протокол", "учебный план",
     "форма обучения", "год набора", "семестр", "зачетных единиц", "часов", "таблица",
 )
+
+REFERENCE_WORDS = (
+    "литература", "учебник", "учебное пособие", "монография", "издательство", "изд-во",
+    "copyright", "isbn", "doi", "http", "https", "www.", "электронный ресурс", "режим доступа",
+    "онлайн учебник", "нэб", "e-library", "elibrary", "библиотек", "для инвалидов", "лицами с ограниченными возможностями",
+)
+
+COMPETENCY_CODE_PATTERN = re.compile(r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b", re.IGNORECASE)
+INDICATOR_CODE_PATTERN = re.compile(r"\bИД[-–—]?[А-Яа-яA-Za-z]*\s*[-–—]?\s*(?:УК|ОПК|ПК|ПКО|ПКС|ОК)[-–—]?\d+(?:\.\d+)?\b", re.IGNORECASE)
 
 
 @dataclass
@@ -51,7 +61,7 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
 
     topics, topic_sources = _extract_topics(clean_lines, sections)
     competencies, competency_sources = _extract_competencies(normalized)
-    outcomes, outcome_sources = _extract_learning_outcomes(clean_lines)
+    outcomes, outcome_sources = _extract_learning_outcomes(clean_lines, sections)
 
     strategy = "rules+sections"
     if not topics:
@@ -138,7 +148,7 @@ def _extract_topics(lines: list[str], sections: dict[str, list[str]]) -> tuple[l
     ]
 
     for line in candidates:
-        if _is_noise(line):
+        if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line):
             continue
         for pattern in patterns:
             match = re.match(pattern, line, flags=re.IGNORECASE)
@@ -152,23 +162,30 @@ def _extract_topics(lines: list[str], sections: dict[str, list[str]]) -> tuple[l
 
 
 def _extract_competencies(text: str) -> tuple[list[str], list[str]]:
-    pattern = r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b"
-    matches = re.findall(pattern, text, flags=re.IGNORECASE)
-    normalized = [match.upper() for match in matches]
+    matches = re.findall(COMPETENCY_CODE_PATTERN, text)
+    normalized = [match.upper().replace(" ", "") for match in matches]
     return normalized, normalized[:]
 
 
-def _extract_learning_outcomes(lines: list[str]) -> tuple[list[str], list[str]]:
+def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] | None = None) -> tuple[list[str], list[str]]:
     outcomes: list[str] = []
     sources: list[str] = []
-    markers = ("знать", "уметь", "владеть", "навык", "способен", "должен")
+    markers = ("знать", "уметь", "владеть", "навык", "навыками", "должен")
+    candidates = sections.get("Результаты обучения", []) if sections else lines
+    if not candidates:
+        candidates = lines
 
-    for line in lines:
+    for line in candidates:
         lower = line.lower()
+        if _is_noise(line) or _is_reference_line(line):
+            continue
+        if _contains_competency_code(line) or _contains_indicator_code(line):
+            continue
         if any(marker in lower for marker in markers) and 18 <= len(line) <= 360:
             cleaned = _clean_candidate(line)
-            outcomes.append(cleaned)
-            sources.append(line)
+            if cleaned and not _contains_competency_code(cleaned):
+                outcomes.append(cleaned)
+                sources.append(line)
     return outcomes, sources
 
 
@@ -190,13 +207,34 @@ def _is_noise(line: str) -> bool:
     return any(word in lower for word in NOISE_WORDS)
 
 
+def _is_reference_line(line: str) -> bool:
+    lower = line.lower()
+    if any(word in lower for word in REFERENCE_WORDS):
+        return True
+    if "©" in line or "copyright" in lower:
+        return True
+    if re.search(r"\b(19|20)\d{2}\b", line) and re.search(r"[А-ЯЁA-Z][а-яёa-z]+\s+[А-ЯЁA-Z]\.\s*[А-ЯЁA-Z]?\.?", line):
+        return True
+    return False
+
+
+def _contains_competency_code(value: str) -> bool:
+    return bool(COMPETENCY_CODE_PATTERN.search(value))
+
+
+def _contains_indicator_code(value: str) -> bool:
+    return bool(INDICATOR_CODE_PATTERN.search(value))
+
+
 def _is_reasonable_topic(value: str) -> bool:
     if not 8 <= len(value) <= 180:
         return False
     lower = value.lower()
-    if _is_noise(value):
+    if _is_noise(value) or _is_reference_line(value):
         return False
-    if any(word in lower for word in ("компетенц", "результат обучения", "итого", "всего")):
+    if _contains_competency_code(value) or _contains_indicator_code(value):
+        return False
+    if any(word in lower for word in ("компетенц", "результат обучения", "итого", "всего", "знать", "уметь", "владеть")):
         return False
     return True
 
@@ -217,6 +255,7 @@ def _calculate_quality_score(
 
 def _clean_candidate(value: str) -> str:
     value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"\|\s*ИД[-–—]?.*$", "", value, flags=re.IGNORECASE)
     return value.strip(" .;:-—|\t")
 
 

@@ -26,6 +26,7 @@ from app.security import get_current_user
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.example_based_generator import apply_example_based_generation
+from app.services.narrow_llm_service import apply_narrow_llm_generation
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
 
@@ -94,14 +95,24 @@ def generate_items(
         )
 
     training_examples = list_training_examples_for_user(db, current_user)
+    mode = payload.generation_mode.strip().lower()
     try:
-        learned_result = apply_example_based_generation(
-            items=generated,
-            training_examples=training_examples,
-            requested_mode=payload.generation_mode,
-            learned_max_items=payload.learned_max_items,
-            fallback_to_template=payload.fallback_to_template,
-        )
+        if mode in {"narrow_llm", "hybrid"}:
+            generation_result = apply_narrow_llm_generation(
+                items=generated,
+                training_examples=training_examples,
+                requested_mode=mode,
+                narrow_max_items=payload.narrow_max_items,
+                fallback_to_template=payload.fallback_to_template,
+            )
+        else:
+            generation_result = apply_example_based_generation(
+                items=generated,
+                training_examples=training_examples,
+                requested_mode=mode,
+                learned_max_items=payload.learned_max_items,
+                fallback_to_template=payload.fallback_to_template,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -109,16 +120,18 @@ def generate_items(
         db,
         fund,
         target_codes,
-        learned_result.items,
+        generation_result.items,
         payload.replace_existing,
     )
     return AssessmentItemsGenerateResponse(
         items=persisted,
-        requested_mode=learned_result.requested_mode,
-        used_mode=learned_result.used_mode,
-        learned_generated_items=learned_result.learned_generated_items,
-        template_generated_items=learned_result.template_generated_items,
-        warnings=learned_result.warnings,
+        requested_mode=generation_result.requested_mode,
+        used_mode=generation_result.used_mode,
+        learned_generated_items=generation_result.learned_generated_items,
+        narrow_llm_generated_items=getattr(generation_result, "narrow_llm_generated_items", 0),
+        template_generated_items=generation_result.template_generated_items,
+        model_version=getattr(generation_result, "model_version", ""),
+        warnings=generation_result.warnings,
     )
 
 

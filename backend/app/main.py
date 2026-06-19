@@ -2,7 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import admin, assessment_funds, assessment_items, auth, export, generation, programs, training_examples
+from app.routers import (
+    admin,
+    assessment_funds,
+    assessment_items,
+    auth,
+    export,
+    generation,
+    narrow_generation,
+    programs,
+    training_examples,
+)
 
 app = FastAPI(title="Control Work Generator API", version="0.9.0")
 
@@ -26,6 +36,7 @@ app.include_router(programs.router)
 app.include_router(generation.router)
 app.include_router(assessment_funds.router)
 app.include_router(assessment_items.router)
+app.include_router(narrow_generation.router)
 app.include_router(training_examples.router)
 app.include_router(export.router)
 

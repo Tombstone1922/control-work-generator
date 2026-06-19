@@ -29,11 +29,24 @@ TOPIC_STOP_MARKERS = (
     "контрольная работа", "оценочные средства", "учебно-методическое обеспечение", "рекомендуемая литература",
 )
 
+SECTION_HEADING_WORDS = (
+    "цели и задачи", "место дисциплины", "требования к результатам", "объем дисциплины",
+    "вид учебной деятельности", "аудиторные занятия", "занятия лекционного", "занятия семинарского",
+    "самостоятельная работа", "промежуточная аттестация", "консультации", "общая трудоемкость",
+    "содержание дисциплины", "структура дисциплины", "перечень практических", "перечень лабораторных",
+    "оценочные средства", "учебно-методическое", "материально-техническое", "информационные технологии",
+    "заочная форма обучения", "очная форма обучения", "итого", "направления подготовки", "направлению подготовки",
+)
+
 COMPETENCY_CODE_PATTERN = re.compile(r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b", re.IGNORECASE)
 INDICATOR_CODE_PATTERN = re.compile(r"\bИД[-–—]?[А-Яа-яA-Za-z]*\s*[-–—]?\s*(?:УК|ОПК|ПК|ПКО|ПКС|ОК)[-–—]?\d+(?:\.\d+)?\b", re.IGNORECASE)
 EXPLICIT_TOPIC_PATTERN = re.compile(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*(.+)$", re.IGNORECASE)
 NUMBERED_TOPIC_PATTERN = re.compile(r"^\d+(?:\.\d+)*[\.\)]\s+(.{8,180})$", re.IGNORECASE)
 BULLET_TOPIC_PATTERN = re.compile(r"^[\-–—•]\s*(.{8,180})$", re.IGNORECASE)
+OUTCOME_SEGMENT_PATTERN = re.compile(
+    r"(?:^|\|\s*|\s)(Знать|Уметь|Владеть)\s*:?\s*(.*?)(?=\s+(?:Знать|Уметь|Владеть)\s*:|$)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -68,7 +81,7 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
     clean_lines = [line for line in raw_lines if not _is_noise(line)]
     sections = _detect_sections(raw_lines)
 
-    topics, topic_sources = _extract_topics(clean_lines, sections)
+    topics, topic_sources = _extract_topics(clean_lines, sections, raw_lines)
     competencies, competency_sources = _extract_competencies(normalized)
     outcomes, outcome_sources = _extract_learning_outcomes(clean_lines, sections)
 
@@ -146,14 +159,32 @@ def _detect_sections(lines: list[str]) -> dict[str, list[str]]:
     return sections
 
 
-def _extract_topics(lines: list[str], sections: dict[str, list[str]]) -> tuple[list[str], list[str]]:
-    candidates = _topic_candidate_lines(sections.get("Содержание дисциплины", []) or lines)
+def _extract_topics(
+    lines: list[str],
+    sections: dict[str, list[str]],
+    raw_lines: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    has_content_section = bool(sections.get("Содержание дисциплины"))
+    candidates = _topic_candidate_lines(sections.get("Содержание дисциплины", []) if has_content_section else lines)
+
     explicit_topics, explicit_sources = _collect_topic_matches(candidates, [EXPLICIT_TOPIC_PATTERN])
     if explicit_topics:
         return explicit_topics, explicit_sources
 
-    table_topics, table_sources = _collect_topic_matches(candidates, [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN])
-    return table_topics, table_sources
+    if has_content_section:
+        table_topics, table_sources = _collect_topic_matches(candidates, [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN])
+        if table_topics:
+            return table_topics, table_sources
+
+    all_explicit, all_sources = _collect_topic_matches(_topic_candidate_lines(lines), [EXPLICIT_TOPIC_PATTERN])
+    if all_explicit:
+        return all_explicit, all_sources
+
+    discipline_topic = _extract_discipline_topic(raw_lines or lines)
+    if discipline_topic:
+        return [discipline_topic], [discipline_topic]
+
+    return [], []
 
 
 def _topic_candidate_lines(lines: list[str]) -> list[str]:
@@ -166,11 +197,56 @@ def _topic_candidate_lines(lines: list[str]) -> list[str]:
     return result
 
 
+def _merge_topic_lines(lines: list[str]) -> list[str]:
+    merged: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        pattern = EXPLICIT_TOPIC_PATTERN if EXPLICIT_TOPIC_PATTERN.match(line) else (
+            NUMBERED_TOPIC_PATTERN if NUMBERED_TOPIC_PATTERN.match(line) else None
+        )
+        if not pattern:
+            merged.append(line)
+            index += 1
+            continue
+
+        source = line
+        title = pattern.match(line).group(1).strip()
+        lookahead = index + 1
+        added = 0
+        while lookahead < len(lines) and added < 2 and len(title) < 150 and _is_topic_continuation(lines[lookahead]):
+            source += " " + lines[lookahead].strip()
+            title += " " + lines[lookahead].strip()
+            lookahead += 1
+            added += 1
+        merged.append(source)
+        index = lookahead
+    return merged
+
+
+def _is_topic_continuation(line: str) -> bool:
+    line = line.strip()
+    if not line or len(line) > 100:
+        return False
+    lower = line.lower()
+    if EXPLICIT_TOPIC_PATTERN.match(line) or NUMBERED_TOPIC_PATTERN.match(line) or BULLET_TOPIC_PATTERN.match(line):
+        return False
+    if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line) or _looks_like_hours_row(line):
+        return False
+    if _is_section_heading(line) or any(marker in lower for marker in TOPIC_STOP_MARKERS):
+        return False
+    if any(word in lower for word in ("знать", "уметь", "владеть", "изучить", "выполнить", "подготовить", "решить")):
+        return False
+    return True
+
+
 def _collect_topic_matches(lines: list[str], patterns: list[re.Pattern]) -> tuple[list[str], list[str]]:
     topics: list[str] = []
     sources: list[str] = []
-    for line in lines:
+    for line in _merge_topic_lines(lines):
         if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line) or _looks_like_hours_row(line):
+            continue
+        if _is_section_heading(line):
             continue
         for pattern in patterns:
             match = pattern.match(line)
@@ -184,6 +260,34 @@ def _collect_topic_matches(lines: list[str], patterns: list[re.Pattern]) -> tupl
     return topics, sources
 
 
+def _extract_discipline_topic(lines: list[str]) -> str:
+    for index, line in enumerate(lines):
+        lower = line.lower().strip()
+        if lower == "по дисциплине" or lower.endswith("по дисциплине"):
+            for next_line in lines[index + 1:index + 6]:
+                candidate = _normalize_discipline_name(next_line)
+                if _is_reasonable_topic(candidate):
+                    return candidate
+
+    for line in lines:
+        match = re.search(r"Дисциплина\s+(.+?)\s+относится", line, re.IGNORECASE)
+        if match:
+            candidate = _normalize_discipline_name(match.group(1))
+            if _is_reasonable_topic(candidate):
+                return candidate
+
+    return ""
+
+
+def _normalize_discipline_name(value: str) -> str:
+    value = _clean_candidate(value)
+    value = re.sub(r"^[А-ЯA-Z]?\.\d+(?:\.\d+)*\s*", "", value)
+    match = re.search(r"[«\"]([^»\"]+)[»\"]", value)
+    if match:
+        value = match.group(1)
+    return _clean_candidate(value)
+
+
 def _extract_competencies(text: str) -> tuple[list[str], list[str]]:
     matches = re.findall(COMPETENCY_CODE_PATTERN, text)
     normalized = [match.upper().replace(" ", "") for match in matches]
@@ -193,23 +297,68 @@ def _extract_competencies(text: str) -> tuple[list[str], list[str]]:
 def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] | None = None) -> tuple[list[str], list[str]]:
     outcomes: list[str] = []
     sources: list[str] = []
-    markers = ("знать", "уметь", "владеть", "навык", "навыками", "должен")
-    candidates = sections.get("Результаты обучения", []) if sections else lines
+    candidates = sections.get("Результаты обучения", []) if sections else []
     if not candidates:
         candidates = lines
 
-    for line in candidates:
-        lower = line.lower()
+    index = 0
+    while index < len(candidates):
+        line = candidates[index]
         if _is_noise(line) or _is_reference_line(line):
+            index += 1
             continue
-        if _contains_competency_code(line) or _contains_indicator_code(line):
-            continue
-        if any(marker in lower for marker in markers) and 18 <= len(line) <= 360:
-            cleaned = _clean_candidate(line)
-            if cleaned and not _contains_competency_code(cleaned):
-                outcomes.append(cleaned)
+
+        segments = _extract_outcome_segments(line)
+        if segments:
+            for segment in segments:
+                outcomes.append(segment)
                 sources.append(line)
+            index += 1
+            continue
+
+        if re.fullmatch(r"\s*(знать|уметь|владеть)\s*:?\s*", line, flags=re.IGNORECASE):
+            collected = []
+            lookahead = index + 1
+            while lookahead < len(candidates) and len(" ".join(collected)) < 260:
+                next_line = candidates[lookahead].strip()
+                if _extract_outcome_segments(next_line) or _is_reference_line(next_line) or _is_section_heading(next_line):
+                    break
+                if _contains_competency_code(next_line) or _contains_indicator_code(next_line):
+                    break
+                if _is_noise(next_line):
+                    lookahead += 1
+                    continue
+                collected.append(next_line)
+                lookahead += 1
+                if next_line.endswith((".", ";")) and len(" ".join(collected)) > 40:
+                    break
+            outcome = _clean_candidate(" ".join(collected))
+            if _is_reasonable_outcome(outcome):
+                outcomes.append(outcome)
+                sources.append(line)
+
+        index += 1
+
     return outcomes, sources
+
+
+def _extract_outcome_segments(line: str) -> list[str]:
+    segments: list[str] = []
+    for match in OUTCOME_SEGMENT_PATTERN.finditer(line):
+        segment = _clean_candidate(match.group(2))
+        if _is_reasonable_outcome(segment):
+            segments.append(segment)
+    return segments
+
+
+def _is_reasonable_outcome(value: str) -> bool:
+    if not 18 <= len(value) <= 360:
+        return False
+    if _contains_competency_code(value) or _contains_indicator_code(value):
+        return False
+    if _is_reference_line(value) or _is_section_heading(value):
+        return False
+    return True
 
 
 def _fallback_topics(lines: list[str]) -> list[str]:
@@ -241,6 +390,16 @@ def _is_reference_line(line: str) -> bool:
     return False
 
 
+def _is_section_heading(value: str) -> bool:
+    lower = value.lower().strip(" .")
+    if any(word in lower for word in SECTION_HEADING_WORDS):
+        return True
+    return bool(re.match(
+        r"^\d+\.\s*(цели|место|требования|объем|содержание|расчетно|курсов|контрольная|оценочные|учебно|материально|информацион)",
+        lower,
+    ))
+
+
 def _contains_competency_code(value: str) -> bool:
     return bool(COMPETENCY_CODE_PATTERN.search(value))
 
@@ -260,7 +419,7 @@ def _is_reasonable_topic(value: str) -> bool:
     if not 8 <= len(value) <= 180:
         return False
     lower = value.lower()
-    if _is_noise(value) or _is_reference_line(value):
+    if _is_noise(value) or _is_reference_line(value) or _is_section_heading(value):
         return False
     if _contains_competency_code(value) or _contains_indicator_code(value) or _looks_like_hours_row(value):
         return False

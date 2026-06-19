@@ -23,8 +23,17 @@ REFERENCE_WORDS = (
     "онлайн учебник", "нэб", "e-library", "elibrary", "библиотек", "для инвалидов", "лицами с ограниченными возможностями",
 )
 
+TOPIC_STOP_MARKERS = (
+    "перечень практических", "практических занятий", "лабораторных работ", "самостоятельной работы",
+    "задания для самостоятельной", "расчетно-графическая работа", "курсовая работа", "курсовой проект",
+    "контрольная работа", "оценочные средства", "учебно-методическое обеспечение", "рекомендуемая литература",
+)
+
 COMPETENCY_CODE_PATTERN = re.compile(r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b", re.IGNORECASE)
 INDICATOR_CODE_PATTERN = re.compile(r"\bИД[-–—]?[А-Яа-яA-Za-z]*\s*[-–—]?\s*(?:УК|ОПК|ПК|ПКО|ПКС|ОК)[-–—]?\d+(?:\.\d+)?\b", re.IGNORECASE)
+EXPLICIT_TOPIC_PATTERN = re.compile(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*(.+)$", re.IGNORECASE)
+NUMBERED_TOPIC_PATTERN = re.compile(r"^\d+(?:\.\d+)*[\.\)]\s+(.{8,180})$", re.IGNORECASE)
+BULLET_TOPIC_PATTERN = re.compile(r"^[\-–—•]\s*(.{8,180})$", re.IGNORECASE)
 
 
 @dataclass
@@ -138,26 +147,40 @@ def _detect_sections(lines: list[str]) -> dict[str, list[str]]:
 
 
 def _extract_topics(lines: list[str], sections: dict[str, list[str]]) -> tuple[list[str], list[str]]:
+    candidates = _topic_candidate_lines(sections.get("Содержание дисциплины", []) or lines)
+    explicit_topics, explicit_sources = _collect_topic_matches(candidates, [EXPLICIT_TOPIC_PATTERN])
+    if explicit_topics:
+        return explicit_topics, explicit_sources
+
+    table_topics, table_sources = _collect_topic_matches(candidates, [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN])
+    return table_topics, table_sources
+
+
+def _topic_candidate_lines(lines: list[str]) -> list[str]:
+    result: list[str] = []
+    for line in lines:
+        lower = line.lower()
+        if any(marker in lower for marker in TOPIC_STOP_MARKERS):
+            break
+        result.append(line)
+    return result
+
+
+def _collect_topic_matches(lines: list[str], patterns: list[re.Pattern]) -> tuple[list[str], list[str]]:
     topics: list[str] = []
     sources: list[str] = []
-    candidates = sections.get("Содержание дисциплины", []) or lines
-    patterns = [
-        r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*(.+)$",
-        r"^\d+(?:\.\d+)*[\.\)]\s+(.{8,180})$",
-        r"^[\-–—•]\s*(.{8,180})$",
-    ]
-
-    for line in candidates:
-        if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line):
+    for line in lines:
+        if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line) or _looks_like_hours_row(line):
             continue
         for pattern in patterns:
-            match = re.match(pattern, line, flags=re.IGNORECASE)
-            if match:
-                candidate = _clean_candidate(match.group(1))
-                if _is_reasonable_topic(candidate):
-                    topics.append(candidate)
-                    sources.append(line)
-                break
+            match = pattern.match(line)
+            if not match:
+                continue
+            candidate = _clean_candidate(match.group(1))
+            if _is_reasonable_topic(candidate):
+                topics.append(candidate)
+                sources.append(line)
+            break
     return topics, sources
 
 
@@ -193,7 +216,7 @@ def _fallback_topics(lines: list[str]) -> list[str]:
     candidates: list[str] = []
     for line in lines:
         cleaned = _clean_candidate(line)
-        if _is_reasonable_topic(cleaned) and not line.endswith(":"):
+        if _is_reasonable_topic(cleaned) and not line.endswith(":") and not _looks_like_hours_row(line):
             candidates.append(cleaned)
     return candidates[:12]
 
@@ -202,7 +225,7 @@ def _is_noise(line: str) -> bool:
     lower = line.lower()
     if len(line) < 3:
         return True
-    if re.fullmatch(r"[\d\s.,;/\-]+", line):
+    if re.fullmatch(r"[\d\s.,;/\-|]+", line):
         return True
     return any(word in lower for word in NOISE_WORDS)
 
@@ -226,15 +249,24 @@ def _contains_indicator_code(value: str) -> bool:
     return bool(INDICATOR_CODE_PATTERN.search(value))
 
 
+def _looks_like_hours_row(value: str) -> bool:
+    value = value.strip()
+    if "|" in value and len(re.findall(r"\b\d+\b", value)) >= 2:
+        return True
+    return bool(re.search(r"\s\|\s*\d+\s*\|", value))
+
+
 def _is_reasonable_topic(value: str) -> bool:
     if not 8 <= len(value) <= 180:
         return False
     lower = value.lower()
     if _is_noise(value) or _is_reference_line(value):
         return False
-    if _contains_competency_code(value) or _contains_indicator_code(value):
+    if _contains_competency_code(value) or _contains_indicator_code(value) or _looks_like_hours_row(value):
         return False
     if any(word in lower for word in ("компетенц", "результат обучения", "итого", "всего", "знать", "уметь", "владеть")):
+        return False
+    if any(word in lower for word in ("подготовиться", "изучить", "выполнить", "решить", "рассмотреть", "разобрать")):
         return False
     return True
 
@@ -256,6 +288,7 @@ def _calculate_quality_score(
 def _clean_candidate(value: str) -> str:
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"\|\s*ИД[-–—]?.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+\|\s*\d+\s*(?:\|\s*\d+\s*)+$", "", value)
     return value.strip(" .;:-—|\t")
 
 

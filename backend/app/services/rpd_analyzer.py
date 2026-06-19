@@ -15,6 +15,8 @@ NOISE_WORDS = (
     "министерство", "федеральное государственное", "кафедра", "утверждаю", "рабочая программа",
     "страница", "лист согласования", "разработчик", "рецензент", "протокол", "учебный план",
     "форма обучения", "год набора", "семестр", "зачетных единиц", "часов", "таблица",
+    "высшего образования", "саратовский государственный", "имени гагарина", "аннотация к рабочей программе",
+    "аннотация практики", "направления подготовки", "направлению подготовки", "профиль",
 )
 
 REFERENCE_WORDS = (
@@ -41,12 +43,13 @@ SECTION_HEADING_WORDS = (
 COMPETENCY_CODE_PATTERN = re.compile(r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b", re.IGNORECASE)
 INDICATOR_CODE_PATTERN = re.compile(r"\bИД[-–—]?[А-Яа-яA-Za-z]*\s*[-–—]?\s*(?:УК|ОПК|ПК|ПКО|ПКС|ОК)[-–—]?\d+(?:\.\d+)?\b", re.IGNORECASE)
 EXPLICIT_TOPIC_PATTERN = re.compile(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*(.+)$", re.IGNORECASE)
-NUMBERED_TOPIC_PATTERN = re.compile(r"^\d+(?:\.\d+)*[\.\)]\s+(.{8,180})$", re.IGNORECASE)
-BULLET_TOPIC_PATTERN = re.compile(r"^[\-–—•]\s*(.{8,180})$", re.IGNORECASE)
+NUMBERED_TOPIC_PATTERN = re.compile(r"^\d+(?:\.\d+)*[\.\)]\s+(.{4,180})$", re.IGNORECASE)
+BULLET_TOPIC_PATTERN = re.compile(r"^[\-–—•]\s*(.{4,180})$", re.IGNORECASE)
 OUTCOME_SEGMENT_PATTERN = re.compile(
     r"(?:^|\|\s*|\s)(Знать|Уметь|Владеть)\s*:?\s*(.*?)(?=\s+(?:Знать|Уметь|Владеть)\s*:|$)",
     re.IGNORECASE,
 )
+OUTCOME_HEADER_PATTERN = re.compile(r"\s*(?:студент\s+должен\s+)?(?:знать|уметь|владеть)\s*:?\.?\s*$", re.IGNORECASE)
 
 
 @dataclass
@@ -87,9 +90,15 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
 
     strategy = "rules+sections"
     if not topics:
-        topics = _fallback_topics(clean_lines)
-        topic_sources = topics[:]
-        strategy = "fallback"
+        discipline_topic = _extract_discipline_topic(raw_lines)
+        if discipline_topic:
+            topics = [discipline_topic]
+            topic_sources = [discipline_topic]
+            strategy = "discipline-title"
+        else:
+            topics = []
+            topic_sources = []
+            strategy = "empty"
 
     topics = _unique_keep_order(topics)[:40]
     competencies = _unique_keep_order(competencies)[:40]
@@ -202,16 +211,14 @@ def _merge_topic_lines(lines: list[str]) -> list[str]:
     index = 0
     while index < len(lines):
         line = lines[index].strip()
-        pattern = EXPLICIT_TOPIC_PATTERN if EXPLICIT_TOPIC_PATTERN.match(line) else (
-            NUMBERED_TOPIC_PATTERN if NUMBERED_TOPIC_PATTERN.match(line) else None
-        )
-        if not pattern:
+        match = EXPLICIT_TOPIC_PATTERN.match(line) or NUMBERED_TOPIC_PATTERN.match(line)
+        if not match:
             merged.append(line)
             index += 1
             continue
 
         source = line
-        title = pattern.match(line).group(1).strip()
+        title = match.group(1).strip()
         lookahead = index + 1
         added = 0
         while lookahead < len(lines) and added < 2 and len(title) < 150 and _is_topic_continuation(lines[lookahead]):
@@ -264,27 +271,53 @@ def _extract_discipline_topic(lines: list[str]) -> str:
     for index, line in enumerate(lines):
         lower = line.lower().strip()
         if lower == "по дисциплине" or lower.endswith("по дисциплине"):
-            for next_line in lines[index + 1:index + 6]:
-                candidate = _normalize_discipline_name(next_line)
-                if _is_reasonable_topic(candidate):
-                    return candidate
+            candidate = _collect_title_after_line(lines, index)
+            if candidate:
+                return candidate
+        if "аннотация практики" in lower or "рабочей программе практики" in lower:
+            candidate = _collect_title_after_line(lines, index)
+            if candidate:
+                return candidate
+
+    for index, line in enumerate(lines[:40]):
+        if re.match(r"^[А-ЯA-ZБ]\.?\d", line.strip()) or re.search(r"[«\"][^»\"]+$", line):
+            combined = [line]
+            for next_line in lines[index + 1:index + 4]:
+                lower = next_line.lower()
+                if "направлен" in lower or "профиль" in lower or "форма" in lower:
+                    break
+                combined.append(next_line)
+                if "»" in next_line or '"' in next_line:
+                    break
+            candidate = _normalize_discipline_name(" ".join(combined))
+            if _is_reasonable_discipline_title(candidate):
+                return candidate
 
     for line in lines:
         match = re.search(r"Дисциплина\s+(.+?)\s+относится", line, re.IGNORECASE)
         if match:
             candidate = _normalize_discipline_name(match.group(1))
-            if _is_reasonable_topic(candidate):
+            if _is_reasonable_discipline_title(candidate):
                 return candidate
 
     return ""
 
 
+def _collect_title_after_line(lines: list[str], index: int) -> str:
+    combined: list[str] = []
+    for next_line in lines[index + 1:index + 8]:
+        lower = next_line.lower()
+        if "направлен" in lower or "профиль" in lower or "форма обучения" in lower or "формы обучения" in lower:
+            break
+        combined.append(next_line)
+    candidate = _normalize_discipline_name(" ".join(combined))
+    return candidate if _is_reasonable_discipline_title(candidate) else ""
+
+
 def _normalize_discipline_name(value: str) -> str:
     value = _clean_candidate(value)
-    value = re.sub(r"^[А-ЯA-Z]?\.\d+(?:\.\d+)*\s*", "", value)
-    match = re.search(r"[«\"]([^»\"]+)[»\"]", value)
-    if match:
-        value = match.group(1)
+    value = re.sub(r"^[А-ЯA-ZБ]?\.?\d+(?:\.\d+)*\s*", "", value)
+    value = value.replace("«", "").replace("»", "").replace('"', "")
     return _clean_candidate(value)
 
 
@@ -298,7 +331,7 @@ def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] 
     outcomes: list[str] = []
     sources: list[str] = []
     candidates = sections.get("Результаты обучения", []) if sections else []
-    if not candidates:
+    if not candidates or not any(re.search(r"\b(знать|уметь|владеть)\b", item, flags=re.IGNORECASE) for item in candidates):
         candidates = lines
 
     index = 0
@@ -316,11 +349,13 @@ def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] 
             index += 1
             continue
 
-        if re.fullmatch(r"\s*(знать|уметь|владеть)\s*:?\s*", line, flags=re.IGNORECASE):
-            collected = []
+        if OUTCOME_HEADER_PATTERN.fullmatch(line):
+            collected: list[str] = []
             lookahead = index + 1
-            while lookahead < len(candidates) and len(" ".join(collected)) < 260:
+            while lookahead < len(candidates) and len(" ".join(collected)) < 900:
                 next_line = candidates[lookahead].strip()
+                if OUTCOME_HEADER_PATTERN.fullmatch(next_line):
+                    break
                 if _extract_outcome_segments(next_line) or _is_reference_line(next_line) or _is_section_heading(next_line):
                     break
                 if _contains_competency_code(next_line) or _contains_indicator_code(next_line):
@@ -330,7 +365,7 @@ def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] 
                     continue
                 collected.append(next_line)
                 lookahead += 1
-                if next_line.endswith((".", ";")) and len(" ".join(collected)) > 40:
+                if len(collected) >= 12:
                     break
             outcome = _clean_candidate(" ".join(collected))
             if _is_reasonable_outcome(outcome):
@@ -352,11 +387,21 @@ def _extract_outcome_segments(line: str) -> list[str]:
 
 
 def _is_reasonable_outcome(value: str) -> bool:
-    if not 18 <= len(value) <= 360:
+    if not 18 <= len(value) <= 1000:
         return False
     if _contains_competency_code(value) or _contains_indicator_code(value):
         return False
     if _is_reference_line(value) or _is_section_heading(value):
+        return False
+    return True
+
+
+def _is_reasonable_discipline_title(value: str) -> bool:
+    if not 4 <= len(value) <= 180:
+        return False
+    if _is_noise(value) or _is_reference_line(value) or _is_section_heading(value):
+        return False
+    if _contains_competency_code(value) or _contains_indicator_code(value) or _looks_like_hours_row(value):
         return False
     return True
 
@@ -416,7 +461,7 @@ def _looks_like_hours_row(value: str) -> bool:
 
 
 def _is_reasonable_topic(value: str) -> bool:
-    if not 8 <= len(value) <= 180:
+    if not 4 <= len(value) <= 180:
         return False
     lower = value.lower()
     if _is_noise(value) or _is_reference_line(value) or _is_section_heading(value):

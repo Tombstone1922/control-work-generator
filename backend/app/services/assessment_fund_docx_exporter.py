@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -20,6 +19,8 @@ EXPORT_DIR = Path(__file__).resolve().parents[1] / "storage" / "exports"
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 SPECIAL_SECTION_TYPES = {"competency_matrix", "grading_rubric"}
+CURRENT_CONTROL_TYPES = {"oral", "practice", "laboratory", "test_bank", "report_topics", "control_work"}
+INTERMEDIATE_CONTROL_TYPES = {"exam_questions", "exam_practice", "credit"}
 
 
 def export_assessment_fund_to_docx(
@@ -30,9 +31,8 @@ def export_assessment_fund_to_docx(
     document = Document()
     _configure_document(document)
     _add_title_page(document, fund)
-    _add_contents(document, fund)
     _add_competency_matrix(document, fund)
-    _add_assessment_materials(document, fund, items)
+    _add_assessment_procedures(document, fund, items)
     _add_grading_rubric(document)
     _add_answers_appendix(document, fund, items)
     _add_validation_appendix(document, validation)
@@ -71,161 +71,194 @@ def _configure_document(document: Document) -> None:
 
 
 def _add_title_page(document: Document, fund: AssessmentFundResponse) -> None:
-    _add_centered(document, "ОЦЕНОЧНЫЕ МАТЕРИАЛЫ", bold=True, size=16, space_before=150)
-    _add_centered(document, "ПО ДИСЦИПЛИНЕ", bold=True, size=16)
-    _add_centered(document, f"«{fund.discipline_name}»", bold=True, size=16, space_before=18)
-    _add_centered(document, "", space_before=24)
-    _add_centered(document, "Фонд оценочных средств", bold=True, size=14)
-    _add_centered(document, "сформирован на основании рабочей программы дисциплины", size=14)
-    _add_centered(document, "", space_before=120)
-    _add_centered(document, f"Статус проекта: {_status_label(fund.status)}", size=14)
-    _add_centered(document, f"Дата формирования: {datetime.now().strftime('%d.%m.%Y')}", size=14)
-    document.add_page_break()
-
-
-def _add_contents(document: Document, fund: AssessmentFundResponse) -> None:
-    _add_heading(document, "СОДЕРЖАНИЕ", level=1, centered=True)
-    entries = [
-        "1. Перечень компетенций и уровни их сформированности",
-        "2. Оценочные материалы для текущего и промежуточного контроля",
-    ]
-    for section in _enabled_content_sections(fund.sections):
-        entries.append(f"   {section.title}")
-    entries.extend(
-        [
-            "3. Критерии выставления оценок",
-            "Приложение А. Эталонные ответы и критерии оценивания",
-            "Приложение Б. Отчет автоматизированной проверки банка заданий",
-        ]
-    )
-    for entry in entries:
-        paragraph = document.add_paragraph(entry)
-        paragraph.paragraph_format.first_line_indent = Cm(0)
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    _add_centered(document, "Федеральное государственное бюджетное образовательное учреждение", size=14)
+    _add_centered(document, "высшего образования", size=14)
+    _add_centered(document, "«Саратовский государственный технический университет имени Гагарина Ю.А.»", size=14)
+    _add_centered(document, "Кафедра", size=14, space_before=8)
+    _add_centered(document, "Оценочные материалы по дисциплине", bold=True, size=16, space_before=80)
+    _add_centered(document, f"«{fund.discipline_name}»", bold=True, size=16, space_before=12)
+    _add_centered(document, "направления подготовки", size=14, space_before=12)
+    _add_centered(document, "09.03.02 Информационные системы и технологии", size=14)
+    _add_centered(document, "Профиль", size=14, space_before=12)
+    _add_centered(document, "«Информационные системы и технологии»", size=14)
+    _add_centered(document, f"Саратов {datetime.now().year}", size=14, space_before=180)
     document.add_page_break()
 
 
 def _add_competency_matrix(document: Document, fund: AssessmentFundResponse) -> None:
-    _add_heading(document, "1. Перечень компетенций и уровни их сформированности", level=1)
-    _add_body(document, "В разделе приведены компетенции, выявленные в рабочей программе дисциплины, индикаторы их достижения и используемые уровни сформированности.")
+    _add_heading(document, "1. Перечень компетенций и уровни их сформированности по дисциплине", level=1)
+    _add_body(
+        document,
+        f"В процессе освоения образовательной программы у обучающегося в ходе изучения дисциплины «{fund.discipline_name}» должны сформироваться компетенции: {_competency_codes(fund)}.",
+    )
+    _add_body(document, "Критерии определения сформированности компетенций на различных уровнях их формирования приведены ниже.")
 
-    table = document.add_table(rows=1, cols=4)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.style = "Table Grid"
-    headers = ["Код компетенции", "Содержание компетенции", "Индикаторы достижения", "Уровни сформированности"]
-    for index, value in enumerate(headers):
-        _set_cell_text(table.rows[0].cells[index], value, bold=True)
+    if not fund.competencies:
+        _add_body(document, "Компетенции не распознаны автоматически. Раздел требует ручного заполнения преподавателем или методистом.", italic=True)
+        return
 
-    if fund.competencies:
-        for competency in fund.competencies:
-            row = table.add_row().cells
-            _set_cell_text(row[0], competency.code)
-            _set_cell_text(row[1], competency.description or "Описание требует уточнения преподавателем.")
-            _set_cell_text(row[2], "\n".join(competency.indicators) or "Индикаторы требуют уточнения преподавателем.")
-            _set_cell_text(row[3], "\n".join(competency.levels) or "Уровни требуют уточнения преподавателем.")
-    else:
-        row = table.add_row().cells
-        _set_cell_text(row[0], "—")
-        _set_cell_text(row[1], "Компетенции не распознаны автоматически.")
-        _set_cell_text(row[2], "Требуется ручное заполнение.")
-        _set_cell_text(row[3], "Требуется ручное заполнение.")
+    for competency in fund.competencies:
+        _add_competency_block(document, competency)
 
+
+def _add_competency_block(document: Document, competency) -> None:
+    summary = document.add_table(rows=1, cols=2)
+    summary.style = "Table Grid"
+    summary.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _set_cell_text(summary.rows[0].cells[0], "Индекс компетенции", bold=True)
+    _set_cell_text(summary.rows[0].cells[1], "Содержание компетенции", bold=True)
+    row = summary.add_row().cells
+    _set_cell_text(row[0], competency.code)
+    _set_cell_text(row[1], competency.description or f"Компетенция {competency.code}, формируемая в рамках освоения дисциплины.")
+
+    indicator_table = document.add_table(rows=1, cols=3)
+    indicator_table.style = "Table Grid"
+    indicator_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for index, value in enumerate(["Код и наименование индикатора достижения компетенции", "Виды занятий для формирования компетенции", "Оценочные средства для оценки уровня сформированности компетенции"]):
+        _set_cell_text(indicator_table.rows[0].cells[index], value, bold=True)
+    indicators = competency.indicators or [f"Индикатор достижения {competency.code} требует уточнения."]
+    for indicator in indicators:
+        cells = indicator_table.add_row().cells
+        _set_cell_text(cells[0], indicator)
+        _set_cell_text(cells[1], "лекции, практические занятия, самостоятельная работа")
+        _set_cell_text(cells[2], "выполнение практических заданий, вопросы текущего контроля, вопросы промежуточной аттестации, тестовые задания")
+
+    _add_body(document, "Уровни освоения компетенции", bold=True, first_line=False)
+    levels = document.add_table(rows=1, cols=2)
+    levels.style = "Table Grid"
+    levels.alignment = WD_TABLE_ALIGNMENT.CENTER
+    _set_cell_text(levels.rows[0].cells[0], "Уровень освоения компетенции", bold=True)
+    _set_cell_text(levels.rows[0].cells[1], "Критерии оценивания", bold=True)
+    for level, criterion in _competency_level_rows(competency):
+        cells = levels.add_row().cells
+        _set_cell_text(cells[0], level)
+        _set_cell_text(cells[1], criterion)
     document.add_paragraph()
 
 
-def _add_assessment_materials(
+def _competency_level_rows(competency) -> list[tuple[str, str]]:
+    base = competency.description or f"содержание компетенции {competency.code}"
+    return [
+        (
+            "Продвинутый (отлично)",
+            f"Знает, умеет и владеет материалом в превосходной мере; уверенно раскрывает {base}; самостоятельно применяет знания при решении учебных и профессионально ориентированных задач; допускает несущественные неточности.",
+        ),
+        (
+            "Повышенный (хорошо)",
+            f"Знает и умеет применять основные положения компетенции; в достаточной мере раскрывает {base}; решает типовые задачи с отдельными неточностями, не искажающими результат.",
+        ),
+        (
+            "Пороговый (удовлетворительно)",
+            f"В минимально допустимой мере демонстрирует освоение компетенции; раскрывает базовые положения по направлению {competency.code}; выполняет типовые задания при наличии методической поддержки.",
+        ),
+    ]
+
+
+def _add_assessment_procedures(
     document: Document,
     fund: AssessmentFundResponse,
     items: list[AssessmentItemRead],
 ) -> None:
-    _add_heading(document, "2. Оценочные материалы для текущего и промежуточного контроля", level=1)
+    _add_heading(document, "2. Методические, оценочные материалы и средства, определяющие процедуры оценивания сформированности компетенций", level=1)
+    _add_body(document, "Оценивание сформированности компетенций проводится в процессе текущего контроля и промежуточной аттестации. Оценочные материалы сгруппированы по видам контроля и темам дисциплины.")
+
     items_by_section: dict[str, list[AssessmentItemRead]] = defaultdict(list)
     for item in items:
         items_by_section[item.section_code].append(item)
 
-    for section in _enabled_content_sections(fund.sections):
-        _add_heading(document, section.title, level=2)
-        _add_body(document, section.description)
+    _add_heading(document, "2.1 Оценочные средства для текущего контроля", level=2)
+    _add_sections_by_type(document, fund, items_by_section, CURRENT_CONTROL_TYPES)
+
+    _add_heading(document, "2.2 Оценочные средства для промежуточного контроля", level=2)
+    _add_sections_by_type(document, fund, items_by_section, INTERMEDIATE_CONTROL_TYPES)
+
+    _add_heading(document, "2.3 Итоговая диагностическая работа по дисциплине", level=2)
+    diagnostic_sections = [section for section in fund.sections if section.enabled and section.assessment_type == "diagnostic"]
+    if diagnostic_sections:
+        for section in diagnostic_sections:
+            section_items = items_by_section.get(section.code, [])
+            if section_items:
+                _add_diagnostic_table(document, section_items)
+            else:
+                _add_body(document, "Диагностические задания пока не сформированы.", italic=True)
+    else:
+        _add_body(document, "Итоговая диагностическая работа не включена в структуру ФОС.", italic=True)
+
+
+def _add_sections_by_type(
+    document: Document,
+    fund: AssessmentFundResponse,
+    items_by_section: dict[str, list[AssessmentItemRead]],
+    allowed_types: set[str],
+) -> None:
+    sections = [section for section in fund.sections if section.enabled and section.assessment_type in allowed_types]
+    if not sections:
+        _add_body(document, "Разделы данного вида контроля не сформированы автоматически.", italic=True)
+        return
+
+    for section in sections:
         section_items = items_by_section.get(section.code, [])
+        _add_heading(document, section.title, level=3)
         if not section_items:
             _add_body(document, "Задания для данного раздела пока не сформированы.", italic=True)
             continue
-
-        if section.assessment_type == "diagnostic":
-            _add_diagnostic_table(document, section_items)
-        else:
-            _add_section_items(document, section_items)
+        _add_grouped_items(document, section_items)
 
 
-def _add_section_items(document: Document, items: list[AssessmentItemRead]) -> None:
+def _add_grouped_items(document: Document, items: list[AssessmentItemRead]) -> None:
     grouped: dict[str, list[AssessmentItemRead]] = defaultdict(list)
     for item in items:
         grouped[item.topic or "Тема не указана"].append(item)
 
-    item_number = 1
-    for topic, topic_items in grouped.items():
-        _add_heading(document, f"Тема: {topic}", level=3)
-        for item in topic_items:
-            paragraph = document.add_paragraph()
-            paragraph.paragraph_format.first_line_indent = Cm(0)
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            run = paragraph.add_run(f"{item_number}. {item.text}")
-            run.font.name = "Times New Roman"
-            run._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-            run.font.size = Pt(14)
-            _add_metadata(document, item)
-            item_number += 1
+    for topic_index, (topic, topic_items) in enumerate(grouped.items(), start=1):
+        _add_body(document, f"Тема {topic_index}. {topic}", bold=True, first_line=False)
+        for item_index, item in enumerate(topic_items, start=1):
+            _add_body(document, f"{item_index}. {item.text}", first_line=False)
 
 
 def _add_diagnostic_table(document: Document, items: list[AssessmentItemRead]) -> None:
-    table = document.add_table(rows=1, cols=5)
+    table = document.add_table(rows=1, cols=6)
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    headers = ["№", "Формулировка задания", "Эталонный ответ", "Компетенция", "Индикатор"]
+    headers = ["Номер задания", "Правильный ответ / ответ", "Содержание вопроса", "Варианты ответа", "Компетенция", "Код и наименование индикатора"]
     for index, value in enumerate(headers):
         _set_cell_text(table.rows[0].cells[index], value, bold=True)
     for index, item in enumerate(items, start=1):
         row = table.add_row().cells
         _set_cell_text(row[0], str(index))
-        _set_cell_text(row[1], item.text)
-        _set_cell_text(row[2], item.answer or "Требует уточнения преподавателем.")
-        _set_cell_text(row[3], item.competency_code or "—")
-        _set_cell_text(row[4], item.indicator or "—")
+        _set_cell_text(row[1], item.answer or "Требует уточнения")
+        _set_cell_text(row[2], item.text)
+        _set_cell_text(row[3], _criteria_as_options(item))
+        _set_cell_text(row[4], item.competency_code or "—")
+        _set_cell_text(row[5], item.indicator or "—")
 
 
-def _add_metadata(document: Document, item: AssessmentItemRead) -> None:
-    paragraph = document.add_paragraph()
-    paragraph.paragraph_format.first_line_indent = Cm(0)
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = paragraph.add_run(
-        f"Тема: {item.topic or '—'}; компетенция: {item.competency_code or '—'}; "
-        f"уровень сложности: {_difficulty_label(item.difficulty)}."
-    )
-    run.italic = True
-    run.font.size = Pt(12)
-    run.font.name = "Times New Roman"
-    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
+def _criteria_as_options(item: AssessmentItemRead) -> str:
+    if not item.criteria:
+        return "—"
+    return "\n".join(f"{index}. {criterion}" for index, criterion in enumerate(item.criteria[:5], start=1))
 
 
 def _add_grading_rubric(document: Document) -> None:
-    _add_heading(document, "3. Критерии выставления оценок", level=1)
-    _add_body(document, "Оценивание результатов выполнения заданий рекомендуется проводить с учетом полноты ответа, корректности примененного способа решения, обоснованности выводов и соответствия результата требованиям задания.")
+    _add_heading(document, "3. Критерии выставления оценок при проведении текущего контроля и промежуточной аттестации", level=1)
+    _add_body(document, "Оценивание результатов обучения проводится путем контроля сформированности элементов компетенций. Оценка выставляется с учетом полноты ответа, корректности выполнения практической части, самостоятельности решения и качества обоснования.")
+    _add_body(document, "Оценки «неудовлетворительно» также ставятся при обнаружении списывания, плагиата, фальсификации данных и результатов работы.")
 
     table = document.add_table(rows=1, cols=3)
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    headers = ["Уровень", "Оценка", "Обобщенный критерий"]
+    headers = ["Шкала оценки", "Оценка", "Критерий выставления оценки"]
     for index, value in enumerate(headers):
         _set_cell_text(table.rows[0].cells[index], value, bold=True)
     rows = [
-        ("Продвинутый", "Отлично", "Ответ полный и логически выстроенный; решение корректно; выводы обоснованы; существенные ошибки отсутствуют."),
-        ("Повышенный", "Хорошо", "Основные положения раскрыты; решение преимущественно корректно; имеются отдельные неточности, не искажающие итоговый результат."),
-        ("Пороговый", "Удовлетворительно", "Продемонстрировано базовое понимание материала; решение частично верно; присутствуют ошибки, но основные элементы задания выполнены."),
-        ("Недостаточный", "Неудовлетворительно", "Ответ отсутствует либо содержит существенные ошибки; решение не соответствует условию задания; выводы не обоснованы."),
+        ("Пятибалльная шкала", "Отлично", "Обучающийся ответил на теоретические вопросы, показал глубокие знания учебного материала, полностью выполнил практические задания и продемонстрировал уверенное владение навыками применения знаний при решении задач."),
+        ("Пятибалльная шкала", "Хорошо", "Обучающийся ответил на теоретические вопросы, показал знания в рамках учебного материала, выполнил практические задания с отдельными неточностями и продемонстрировал хорошие умения решения задач."),
+        ("Пятибалльная шкала", "Удовлетворительно", "Обучающийся показал базовые знания, частично выполнил практические задания и продемонстрировал минимально допустимый уровень применения знаний и умений."),
+        ("Пятибалльная шкала", "Неудовлетворительно", "Обучающийся продемонстрировал недостаточный уровень знаний и умений, допустил существенные ошибки или не приступал к выполнению задания."),
     ]
-    for level, mark, criterion in rows:
+    for scale, mark, criterion in rows:
         cells = table.add_row().cells
-        _set_cell_text(cells[0], level)
+        _set_cell_text(cells[0], scale)
         _set_cell_text(cells[1], mark)
         _set_cell_text(cells[2], criterion)
     document.add_paragraph()
@@ -310,11 +343,12 @@ def _add_validation_appendix(document: Document, validation: AssessmentItemsVali
 
 
 def _enabled_content_sections(sections: list[AssessmentFundSection]) -> list[AssessmentFundSection]:
-    return [
-        section
-        for section in sections
-        if section.enabled and section.assessment_type not in SPECIAL_SECTION_TYPES
-    ]
+    return [section for section in sections if section.enabled and section.assessment_type not in SPECIAL_SECTION_TYPES]
+
+
+def _competency_codes(fund: AssessmentFundResponse) -> str:
+    codes = [competency.code for competency in fund.competencies]
+    return ", ".join(codes) if codes else "не определены автоматически"
 
 
 def _add_heading(document: Document, text: str, level: int, centered: bool = False) -> None:
@@ -323,14 +357,7 @@ def _add_heading(document: Document, text: str, level: int, centered: bool = Fal
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if centered else WD_ALIGN_PARAGRAPH.LEFT
 
 
-def _add_body(
-    document: Document,
-    text: str,
-    *,
-    italic: bool = False,
-    bold: bool = False,
-    first_line: bool = True,
-) -> None:
+def _add_body(document: Document, text: str, *, italic: bool = False, bold: bool = False, first_line: bool = True) -> None:
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.first_line_indent = Cm(1.25) if first_line else Cm(0)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -342,14 +369,7 @@ def _add_body(
     run.font.size = Pt(14)
 
 
-def _add_centered(
-    document: Document,
-    text: str,
-    *,
-    bold: bool = False,
-    size: int = 14,
-    space_before: int = 0,
-) -> None:
+def _add_centered(document: Document, text: str, *, bold: bool = False, size: int = 14, space_before: int = 0) -> None:
     paragraph = document.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph.paragraph_format.first_line_indent = Cm(0)
@@ -372,7 +392,7 @@ def _set_cell_text(cell, value: str, *, bold: bool = False) -> None:
     run.bold = bold
     run.font.name = "Times New Roman"
     run._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-    run.font.size = Pt(11)
+    run.font.size = Pt(10)
     _set_cell_margins(cell, top=60, start=80, bottom=60, end=80)
 
 
@@ -397,21 +417,3 @@ def _safe_filename(value: str) -> str:
     value = re.sub(r"[^0-9A-Za-zА-Яа-яЁё_-]+", "_", value.strip())
     value = re.sub(r"_+", "_", value).strip("_")
     return value[:80] or "discipline"
-
-
-def _status_label(status: str) -> str:
-    return {
-        "draft": "черновик",
-        "generated": "сформировано",
-        "in_review": "на проверке",
-        "revision_required": "требует доработки",
-        "approved": "утверждено",
-    }.get(status, status)
-
-
-def _difficulty_label(difficulty: str) -> str:
-    return {
-        "easy": "базовый",
-        "medium": "средний",
-        "hard": "повышенный",
-    }.get(difficulty, difficulty)

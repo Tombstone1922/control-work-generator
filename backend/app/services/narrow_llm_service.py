@@ -4,7 +4,12 @@ from difflib import SequenceMatcher
 from app.schemas import AssessmentItemRead, TrainingExampleRead
 from app.services.example_based_generator import apply_example_based_generation
 
-MODEL_VERSION = "narrow-fos-generator-v0.1"
+MODEL_VERSION = "narrow-fos-generator-v0.2"
+SOURCE_WEIGHTS = {
+    "om_direct": 1.45,
+    "expert_feedback": 1.20,
+    "om_similar": 0.90,
+}
 
 
 @dataclass
@@ -23,9 +28,9 @@ def apply_narrow_llm_generation(*, items, training_examples, requested_mode, nar
     good = [x for x in training_examples if x.quality_label == "good"]
     if not good:
         if not fallback_to_template:
-            raise ValueError("No expert-approved examples for narrow generator.")
+            raise ValueError("No expert-approved or OM examples for narrow generator.")
         fallback = apply_example_based_generation(items=items, training_examples=training_examples, requested_mode="template", learned_max_items=0, fallback_to_template=True)
-        return NarrowGenerationResult(fallback.items, requested_mode, "template", 0, 0, len(items), MODEL_VERSION, ["No expert examples; template fallback was used."])
+        return NarrowGenerationResult(fallback.items, requested_mode, "template", 0, 0, len(items), MODEL_VERSION, ["Нет OM/экспертных примеров; использованы шаблоны."])
 
     limit = len(items) if requested_mode == "narrow_llm" else min(narrow_max_items, len(items))
     result = []
@@ -35,16 +40,22 @@ def apply_narrow_llm_generation(*, items, training_examples, requested_mode, nar
             continue
         example = max(good, key=lambda x: _score(item, x))
         result.append(_adapt(item, example))
-    return NarrowGenerationResult(result, requested_mode, "narrow_llm" if limit == len(items) else "hybrid", 0, limit, len(items) - limit, MODEL_VERSION, [])
+    warnings = []
+    om_count = sum(1 for example in good if example.source.startswith("om_"))
+    if om_count:
+        warnings.append(f"Narrow-модель использовала OM-примеры как главный источник: {om_count} шт.")
+    return NarrowGenerationResult(result, requested_mode, "narrow_llm" if limit == len(items) else "hybrid", 0, limit, len(items) - limit, MODEL_VERSION, warnings)
 
 
 def _score(item, example):
     score = 0.0
-    if item.assessment_type == example.assessment_type:
-        score += 5
-    if item.item_type == example.item_type:
-        score += 2
-    score += SequenceMatcher(None, item.topic.lower(), example.topic.lower()).ratio()
+    score += 0.30 * SOURCE_WEIGHTS.get(example.source, 0.75)
+    score += 0.20 * (1.0 if item.assessment_type == example.assessment_type else 0.0)
+    score += 0.20 * SequenceMatcher(None, (item.topic or "").lower(), (example.topic or "").lower()).ratio()
+    score += 0.15 * (1.0 if item.competency_code and item.competency_code == example.competency_code else 0.0)
+    score += 0.07 * (1.0 if item.item_type == example.item_type else 0.0)
+    score += 0.05 * (1.0 if example.answer and example.criteria else 0.25)
+    score += 0.03
     return score
 
 
@@ -52,4 +63,12 @@ def _adapt(item, example):
     topic = item.topic or "topic"
     text = example.text.replace(example.topic, topic) if example.topic else example.text
     answer = example.answer.replace(example.topic, topic) if example.topic else example.answer
-    return item.model_copy(update={"text": text or item.text, "answer": answer or item.answer, "criteria": (example.criteria or item.criteria)[:6], "source_context": f"Narrow FOS generator {MODEL_VERSION}; example {example.id}.", "source_kind": "narrow_llm"})
+    source_kind = "om_reference" if example.source.startswith("om_") else "narrow_llm"
+    source_label = "OM" if example.source.startswith("om_") else "expert example"
+    return item.model_copy(update={
+        "text": text or item.text,
+        "answer": answer or item.answer,
+        "criteria": (example.criteria or item.criteria)[:6],
+        "source_context": f"Narrow FOS generator {MODEL_VERSION}; {source_label} {example.id}.",
+        "source_kind": source_kind,
+    })

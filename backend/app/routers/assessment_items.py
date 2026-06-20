@@ -27,6 +27,7 @@ from app.services.assessment_item_generator import ItemGenerationContext, genera
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.example_based_generator import apply_example_based_generation
 from app.services.narrow_llm_service import apply_narrow_llm_generation
+from app.services.reference_library import find_om_examples_for_program, get_reference_library_path
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
 
@@ -95,6 +96,15 @@ def generate_items(
         )
 
     training_examples = list_training_examples_for_user(db, current_user)
+    om_match = find_om_examples_for_program(
+        program_filename=fund.program.filename,
+        program_text=fund.program.text_preview,
+        fund_id=fund.id,
+        discipline_name=fund.discipline_name,
+        topics=topics,
+    )
+    training_examples = om_match.examples + training_examples
+
     mode = payload.generation_mode.strip().lower()
     try:
         if mode in {"narrow_llm", "hybrid"}:
@@ -116,6 +126,10 @@ def generate_items(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    warnings = list(om_match.warnings) + list(generation_result.warnings)
+    if om_match.examples:
+        warnings.append(f"Локальная база OM добавила примеров: {len(om_match.examples)}. Папка: {get_reference_library_path()}")
+
     persisted = replace_items_for_sections(
         db,
         fund,
@@ -131,7 +145,7 @@ def generate_items(
         narrow_llm_generated_items=getattr(generation_result, "narrow_llm_generated_items", 0),
         template_generated_items=generation_result.template_generated_items,
         model_version=getattr(generation_result, "model_version", ""),
-        warnings=generation_result.warnings,
+        warnings=warnings,
     )
 
 

@@ -11,6 +11,17 @@ PLACEHOLDER_ANSWER_MARKERS = (
     "формируется и уточняется преподавателем",
     "необходимо уточнить преподавателю",
 )
+SOURCE_WEIGHTS = {
+    "om_direct": 1.45,
+    "expert_feedback": 1.20,
+    "om_similar": 0.90,
+    "generated": 0.10,
+}
+QUALITY_WEIGHTS = {
+    "good": 1.0,
+    "needs_revision": 0.35,
+    "bad": -1.0,
+}
 
 
 @dataclass
@@ -38,6 +49,8 @@ def apply_example_based_generation(
     good_examples = [example for example in training_examples if example.quality_label == "good"]
     bad_examples = [example for example in training_examples if example.quality_label == "bad"]
     revision_examples = [example for example in training_examples if example.quality_label == "needs_revision"]
+    om_direct_count = sum(1 for example in good_examples if example.source == "om_direct")
+    om_similar_count = sum(1 for example in good_examples if example.source == "om_similar")
     warnings: list[str] = []
 
     if mode == "template":
@@ -51,7 +64,7 @@ def apply_example_based_generation(
         )
 
     if not good_examples:
-        message = "В обучающей выборке пока нет хороших примеров. Сначала разметьте хотя бы несколько заданий как good."
+        message = "В обучающей выборке и локальной библиотеке OM пока нет хороших примеров."
         if not fallback_to_template:
             raise ValueError(message)
         warnings.append(message + " Использован шаблонный генератор.")
@@ -77,12 +90,16 @@ def apply_example_based_generation(
         else:
             result.append(item)
 
+    if om_direct_count:
+        warnings.append(f"Использованы прямые OM-примеры из локальной библиотеки: {om_direct_count} шт.")
+    if om_similar_count:
+        warnings.append(f"Использованы похожие OM-примеры из локальной библиотеки: {om_similar_count} шт.")
     if bad_examples:
-        warnings.append(f"При генерации учитывались плохие примеры: {len(bad_examples)} шт.")
+        warnings.append(f"При генерации учитывались плохие примеры как анти-примеры: {len(bad_examples)} шт.")
     if revision_examples:
         warnings.append(f"В обучающей выборке есть примеры на доработку: {len(revision_examples)} шт.")
     if mode == "hybrid" and learned_count < len(items):
-        warnings.append("Часть заданий сформирована по обучающим примерам, остальные оставлены шаблонными.")
+        warnings.append("Часть заданий сформирована по обучающим примерам/OM, остальные оставлены шаблонными.")
 
     return ExampleBasedGenerationResult(
         items=result,
@@ -104,17 +121,21 @@ def _select_best_example(item: AssessmentItemRead, examples: list[TrainingExampl
 
 
 def _score_example(item: AssessmentItemRead, example: TrainingExampleRead) -> float:
+    # Весовая модель: OM имеет больший приоритет, RP/темы и компетенции задают ограничения,
+    # экспертные примеры усиливают выбор, а плохие примеры используются только как анти-примеры.
+    source_weight = SOURCE_WEIGHTS.get(example.source, 0.75)
+    quality_weight = QUALITY_WEIGHTS.get(example.quality_label, 0.5)
+    answer_quality = 1.0 if example.answer and not any(marker in example.answer.lower() for marker in PLACEHOLDER_ANSWER_MARKERS) else 0.25
+    criteria_quality = 1.0 if example.criteria else 0.25
+
     score = 0.0
-    if item.assessment_type == example.assessment_type:
-        score += 4.0
-    if item.item_type == example.item_type:
-        score += 2.0
-    if item.difficulty == example.difficulty:
-        score += 1.0
-    if item.competency_code and item.competency_code == example.competency_code:
-        score += 2.0
-    score += 3.0 * _text_similarity(item.topic, example.topic)
-    score += 0.5 * _text_similarity(item.indicator, example.indicator)
+    score += 0.30 * source_weight
+    score += 0.20 * (1.0 if item.assessment_type == example.assessment_type else 0.0)
+    score += 0.20 * _text_similarity(item.topic, example.topic)
+    score += 0.15 * (1.0 if item.competency_code and item.competency_code == example.competency_code else _text_similarity(item.indicator, example.indicator))
+    score += 0.07 * ((1.0 if item.item_type == example.item_type else 0.0) + (1.0 if item.difficulty == example.difficulty else 0.0)) / 2
+    score += 0.05 * ((answer_quality + criteria_quality) / 2)
+    score += 0.03 * quality_weight
     return score
 
 
@@ -132,14 +153,16 @@ def _build_item_from_example(
 
     criteria = example.criteria or item.criteria
     answer = _adapt_answer_to_target(item, example)
+    source_kind = "om_reference" if example.source.startswith("om_") else "learned_example"
+    source_label = "локального OM" if example.source.startswith("om_") else "обучающего примера"
 
     return item.model_copy(
         update={
             "text": text,
             "answer": answer,
             "criteria": criteria,
-            "source_context": f"Сформировано по аналогии с обучающим примером {example.id}. Тема примера: «{example.topic}».",
-            "source_kind": "learned_example",
+            "source_context": f"Сформировано по аналогии с {source_label} {example.id}. Тема примера: «{example.topic}».",
+            "source_kind": source_kind,
             "status": "draft",
         }
     )
@@ -173,12 +196,12 @@ def _adapt_answer_to_target(item: AssessmentItemRead, example: TrainingExampleRe
     if not answer or any(marker in answer.lower() for marker in PLACEHOLDER_ANSWER_MARKERS):
         return (
             f"Эталонный ответ должен раскрывать тему «{target_topic}», содержать основные понятия, "
-            "обоснование выбранного решения и итоговый вывод. Структура ответа основана на экспертно подтвержденном примере."
+            "обоснование выбранного решения и итоговый вывод. Структура ответа основана на OM/экспертном примере."
         )
     if source_topic and source_topic.lower() in answer.lower():
         return _replace_case_insensitive(answer, source_topic, target_topic)
     return (
-        f"Эталонный ответ формируется по структуре экспертного примера. Для темы «{target_topic}» необходимо раскрыть: "
+        f"Эталонный ответ формируется по структуре OM/экспертного примера. Для темы «{target_topic}» необходимо раскрыть: "
         f"{_shorten(answer, 500)}"
     )
 

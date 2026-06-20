@@ -153,3 +153,55 @@ class TrainingExample(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     fund: Mapped[AssessmentFund] = relationship(back_populates="training_examples")
+
+
+class ReferenceDocument(Base):
+    __tablename__ = "reference_documents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    document_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    discipline_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    parsed_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    om_items: Mapped[list["OmAssessmentItem"]] = relationship(
+        back_populates="om_document",
+        cascade="all, delete-orphan",
+    )
+
+
+class RpOmPair(Base):
+    __tablename__ = "rp_om_pairs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rp_document_id: Mapped[str] = mapped_column(ForeignKey("reference_documents.id"), nullable=False, index=True)
+    om_document_id: Mapped[str] = mapped_column(ForeignKey("reference_documents.id"), nullable=False, index=True)
+    discipline_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    pairing_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class OmAssessmentItem(Base):
+    __tablename__ = "om_assessment_items"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pair_id: Mapped[str | None] = mapped_column(ForeignKey("rp_om_pairs.id"), nullable=True, index=True)
+    om_document_id: Mapped[str] = mapped_column(ForeignKey("reference_documents.id"), nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    competency_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    indicator: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    assessment_type: Mapped[str] = mapped_column(String(64), nullable=False, default="oral")
+    item_type: Mapped[str] = mapped_column(String(64), nullable=False, default="open")
+    difficulty: Mapped[str] = mapped_column(String(32), nullable=False, default="medium")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    criteria_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    source_section: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sample_weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    om_document: Mapped[ReferenceDocument] = relationship(back_populates="om_items")

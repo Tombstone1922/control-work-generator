@@ -13,6 +13,7 @@ from app.repositories_assessment_items import (
     replace_items_for_sections,
     update_item_for_user,
 )
+from app.repositories_reference_materials import list_om_generation_examples_for_fund, training_example_to_weighted
 from app.repositories_training_examples import list_training_examples_for_user
 from app.schemas import (
     AssessmentCompetencyRead,
@@ -95,7 +96,8 @@ def generate_items(
             )
         )
 
-    training_examples = list_training_examples_for_user(db, current_user)
+    expert_examples = [training_example_to_weighted(item) for item in list_training_examples_for_user(db, current_user)]
+    uploaded_om_examples = list_om_generation_examples_for_fund(db, current_user, fund)
     om_match = find_om_examples_for_program(
         program_filename=fund.program.filename,
         program_text=fund.program.text_preview,
@@ -103,14 +105,14 @@ def generate_items(
         discipline_name=fund.discipline_name,
         topics=topics,
     )
-    training_examples = om_match.examples + training_examples
+    generation_examples = uploaded_om_examples + om_match.examples + expert_examples
 
     mode = payload.generation_mode.strip().lower()
     try:
         if mode in {"narrow_llm", "hybrid"}:
             generation_result = apply_narrow_llm_generation(
                 items=generated,
-                training_examples=training_examples,
+                training_examples=generation_examples,
                 requested_mode=mode,
                 narrow_max_items=payload.narrow_max_items,
                 fallback_to_template=payload.fallback_to_template,
@@ -118,7 +120,7 @@ def generate_items(
         else:
             generation_result = apply_example_based_generation(
                 items=generated,
-                training_examples=training_examples,
+                training_examples=generation_examples,
                 requested_mode=mode,
                 learned_max_items=payload.learned_max_items,
                 fallback_to_template=payload.fallback_to_template,
@@ -127,8 +129,10 @@ def generate_items(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     warnings = list(om_match.warnings) + list(generation_result.warnings)
+    if uploaded_om_examples:
+        warnings.insert(0, f"База загруженных OM добавила эталонных заданий: {len(uploaded_om_examples)}.")
     if om_match.examples:
-        warnings.append(f"Локальная база OM добавила примеров: {len(om_match.examples)}. Папка: {get_reference_library_path()}")
+        warnings.append(f"Папочная база OM добавила примеров: {len(om_match.examples)}. Папка: {get_reference_library_path()}")
 
     persisted = replace_items_for_sections(
         db,

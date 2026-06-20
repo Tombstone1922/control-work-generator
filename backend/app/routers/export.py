@@ -8,11 +8,16 @@ from app import models
 from app.database import get_db
 from app.repositories import get_generation_for_user
 from app.repositories_assessment_funds import get_assessment_fund_for_user
-from app.repositories_assessment_items import get_fund_entity_for_user, list_items_for_user
+from app.repositories_assessment_items import get_fund_entity_for_user, list_items_for_user, replace_items_for_sections
+from app.repositories_training_examples import list_training_examples_for_user
+from app.schemas import AssessmentCompetencyRead, AssessmentFundSection, AssessmentItemRead
 from app.security import get_current_user
 from app.services.assessment_fund_docx_exporter import export_assessment_fund_to_docx
+from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.docx_exporter import export_generation_to_docx
+from app.services.example_based_generator import apply_example_based_generation
+from app.services.reference_library import find_om_examples_for_program
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -48,6 +53,12 @@ def export_assessment_fund_docx(
     if fund is None or fund_entity is None or items is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
 
+    if not items:
+        items = _generate_missing_items_for_export(db, fund_entity, current_user)
+        fund = get_assessment_fund_for_user(db, fund_id, current_user)
+        if fund is None:
+            raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+
     topics = json.loads(fund_entity.program.topics_json or "[]")
     competencies = [item.code for item in fund_entity.competencies]
     validation = validate_assessment_items(items, topics, competencies)
@@ -56,4 +67,72 @@ def export_assessment_fund_docx(
         path=str(file_path),
         filename=file_path.name,
         media_type=DOCX_MEDIA_TYPE,
+    )
+
+
+def _generate_missing_items_for_export(
+    db: Session,
+    fund: models.AssessmentFund,
+    current_user: models.User,
+) -> list[AssessmentItemRead]:
+    raw_sections = json.loads(fund.sections_json or "[]")
+    selected_sections = [
+        AssessmentFundSection(**raw)
+        for raw in raw_sections
+        if raw.get("enabled") and raw.get("assessment_type") not in {"competency_matrix", "grading_rubric"}
+    ]
+    if not selected_sections:
+        return []
+
+    competencies = [
+        AssessmentCompetencyRead(
+            id=item.id,
+            code=item.code,
+            description=item.description,
+            indicators=json.loads(item.indicators_json or "[]"),
+            levels=json.loads(item.levels_json or "[]"),
+        )
+        for item in fund.competencies
+    ]
+    topics = json.loads(fund.program.topics_json or "[]")
+
+    generated: list[AssessmentItemRead] = []
+    target_codes: list[str] = []
+    for section in selected_sections:
+        target_codes.append(section.code)
+        generated.extend(
+            generate_items_for_section(
+                ItemGenerationContext(
+                    fund_id=fund.id,
+                    section=section,
+                    topics=topics,
+                    competencies=competencies,
+                    max_items=40,
+                )
+            )
+        )
+
+    training_examples = list_training_examples_for_user(db, current_user)
+    om_match = find_om_examples_for_program(
+        program_filename=fund.program.filename,
+        program_text=fund.program.text_preview,
+        fund_id=fund.id,
+        discipline_name=fund.discipline_name,
+        topics=topics,
+    )
+    training_examples = om_match.examples + training_examples
+
+    generation_result = apply_example_based_generation(
+        items=generated,
+        training_examples=training_examples,
+        requested_mode="learned",
+        learned_max_items=len(generated),
+        fallback_to_template=True,
+    )
+    return replace_items_for_sections(
+        db,
+        fund,
+        target_codes,
+        generation_result.items,
+        replace_existing=True,
     )

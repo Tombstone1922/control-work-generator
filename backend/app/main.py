@@ -11,10 +11,11 @@ from app.routers import (
     generation,
     narrow_generation,
     programs,
+    reference_materials,
     training_examples,
 )
 
-app = FastAPI(title="Control Work Generator API", version="0.9.0")
+app = FastAPI(title="Control Work Generator API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +38,7 @@ app.include_router(generation.router)
 app.include_router(assessment_funds.router)
 app.include_router(assessment_items.router)
 app.include_router(narrow_generation.router)
+app.include_router(reference_materials.router)
 app.include_router(training_examples.router)
 app.include_router(export.router)
 

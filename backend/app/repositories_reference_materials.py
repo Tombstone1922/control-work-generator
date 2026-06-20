@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -99,6 +99,7 @@ def save_reference_document(
     )
     if existing is not None:
         paired = _auto_pair_document(db, existing)
+        db.commit()
         return document_to_schema(existing), len(existing.om_items) if document_type == "om" else 0, paired
 
     entity = models.ReferenceDocument(

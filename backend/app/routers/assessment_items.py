@@ -83,19 +83,21 @@ def generate_items(
 
     generated: list[AssessmentItemRead] = []
     target_codes: list[str] = []
+    used_texts: list[str] = []
     for section in selected_sections:
         target_codes.append(section.code)
-        generated.extend(
-            generate_items_for_section(
-                ItemGenerationContext(
-                    fund_id=fund.id,
-                    section=section,
-                    topics=topics,
-                    competencies=competencies,
-                    max_items=payload.max_items_per_section,
-                )
+        section_items = generate_items_for_section(
+            ItemGenerationContext(
+                fund_id=fund.id,
+                section=section,
+                topics=topics,
+                competencies=competencies,
+                max_items=payload.max_items_per_section,
+                discipline_name=fund.discipline_name,
+                used_texts=used_texts,
             )
         )
+        generated.extend(section_items)
 
     expert_examples = [training_example_to_weighted(item) for item in list_training_examples_for_user(db, current_user)]
     uploaded_om_examples = list_om_generation_examples_for_fund(db, current_user, fund)
@@ -129,7 +131,7 @@ def generate_items(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    cleaned_items, cleanup_warnings = postprocess_generated_items(generation_result.items)
+    cleaned_items, cleanup_warnings = postprocess_generated_items(generation_result.items, discipline_name=fund.discipline_name, all_topics=topics)
     generation_result.items = cleaned_items
 
     warnings = list(om_match.warnings) + list(generation_result.warnings) + cleanup_warnings

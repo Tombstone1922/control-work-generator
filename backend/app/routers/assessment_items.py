@@ -25,6 +25,7 @@ from app.schemas import (
 )
 from app.security import get_current_user
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
+from app.services.assessment_item_postprocessor import postprocess_generated_items
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.example_based_generator import apply_example_based_generation
 from app.services.narrow_llm_service import apply_narrow_llm_generation
@@ -128,7 +129,10 @@ def generate_items(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    warnings = list(om_match.warnings) + list(generation_result.warnings)
+    cleaned_items, cleanup_warnings = postprocess_generated_items(generation_result.items)
+    generation_result.items = cleaned_items
+
+    warnings = list(om_match.warnings) + list(generation_result.warnings) + cleanup_warnings
     if uploaded_om_examples:
         warnings.insert(0, f"База загруженных OM добавила эталонных заданий: {len(uploaded_om_examples)}.")
     if om_match.examples:
@@ -180,19 +184,20 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemRead:
-    item = update_item_for_user(db, fund_id, item_id, current_user, payload)
-    if item is None:
+    updated = update_item_for_user(db, fund_id, item_id, current_user, payload)
+    if updated is None:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
-    return item
+    return updated
 
 
-@router.delete("/{fund_id}/{item_id}", status_code=204)
+@router.delete("/{fund_id}/{item_id}", status_code=204, response_class=Response)
 def delete_item(
     fund_id: str,
     item_id: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> Response:
-    if not delete_item_for_user(db, fund_id, item_id, current_user):
+    deleted = delete_item_for_user(db, fund_id, item_id, current_user)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
     return Response(status_code=204)

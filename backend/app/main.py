@@ -7,6 +7,7 @@ from app.routers import (
     assessment_funds,
     assessment_items,
     auth,
+    context_module,
     export,
     generation,
     local_llm,
@@ -41,6 +42,7 @@ app.include_router(assessment_items.router)
 app.include_router(narrow_generation.router)
 app.include_router(reference_materials.router)
 app.include_router(training_examples.router)
+app.include_router(context_module.router)
 app.include_router(local_llm.router)
 app.include_router(export.router)
 

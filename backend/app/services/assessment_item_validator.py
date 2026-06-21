@@ -68,7 +68,7 @@ def validate_assessment_items(
     if missing_competency_item_ids:
         warnings.append("У части заданий не указана компетенция.")
     if duplicate_groups:
-        warnings.append("Обнаружены потенциальные дубли формулировок заданий.")
+        warnings.append("Обнаружены сильные дубли формулировок заданий.")
 
     return AssessmentItemsValidation(
         total_items=len(items),
@@ -123,8 +123,6 @@ def _find_duplicate_groups(items: list[AssessmentItemRead]) -> list[AssessmentDu
         current_ids = [first.id]
         best_similarity = 0.0
         for second in items[index + 1:]:
-            if first.section_code != second.section_code:
-                continue
             second_text = _normalize_text(second.text)
             if not second_text:
                 continue
@@ -132,7 +130,7 @@ def _find_duplicate_groups(items: list[AssessmentItemRead]) -> list[AssessmentDu
             if pair in used_pairs:
                 continue
             similarity = SequenceMatcher(None, first_text, second_text).ratio()
-            if similarity >= 0.92:
+            if similarity >= 0.94:
                 current_ids.append(second.id)
                 best_similarity = max(best_similarity, similarity)
                 used_pairs.add(pair)

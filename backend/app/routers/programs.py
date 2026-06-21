@@ -15,6 +15,7 @@ from app.repositories import (
 )
 from app.schemas import ProgramAnalysis, RpdAnalysisReport, RpdDiagnostics
 from app.security import get_current_user
+from app.services.discipline_catalog import enrich_analysis_with_catalog
 from app.services.discipline_profile import enrich_analysis_with_discipline_profile
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
@@ -26,7 +27,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
     analysis = analyze_rpd_text(text)
-    return enrich_analysis_with_discipline_profile(filename, text, analysis)
+    analysis = enrich_analysis_with_discipline_profile(filename, text, analysis)
+    return enrich_analysis_with_catalog(filename, text, analysis)
 
 
 def _build_program_schema(program_id: str, filename: str, text: str, analysis: RpdAnalysisResult) -> ProgramAnalysis:

@@ -4,6 +4,7 @@ import re
 from collections import Counter
 
 from app.schemas import AssessmentItemRead
+from app.services.assessment_item_smart_builder import build_smart_task, normalize_topic, should_rebuild_text
 
 FORBIDDEN_PHRASES = (
     "перечень компетенций",
@@ -28,11 +29,12 @@ SECTION_HEADING_RE = re.compile(r"^(?:\d+(?:\.\d+)*\s+)?(?:перечень|ме
 def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[AssessmentItemRead], list[str]]:
     cleaned: list[AssessmentItemRead] = []
     warnings: list[str] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     removed_bad = 0
     removed_duplicates = 0
+    rebuilt_generic = 0
 
-    for item in items:
+    for index, item in enumerate(items):
         text = clean_text(item.text)
         answer = clean_text(item.answer)
         topic = clean_topic(item.topic)
@@ -43,8 +45,22 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
             removed_bad += 1
             continue
 
+        if should_rebuild_text(text, answer):
+            task = build_smart_task(
+                topic=topic,
+                assessment_type=item.assessment_type,
+                item_type=item.item_type,
+                index=index,
+                difficulty=item.difficulty,
+            )
+            topic = task.topic
+            text = task.text
+            answer = task.answer
+            criteria = task.criteria
+            rebuilt_generic += 1
+
         normalized_key = normalize_for_key(text)
-        key = (item.section_code, topic.lower(), normalized_key)
+        key = (item.section_code, normalized_key)
         if key in seen:
             removed_duplicates += 1
             continue
@@ -59,21 +75,15 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
 
     if removed_bad:
         warnings.append(f"Очистка банка заданий удалила мусорные OM-фрагменты: {removed_bad}.")
+    if rebuilt_generic:
+        warnings.append(f"Умный конструктор перестроил слишком общие задания: {rebuilt_generic}.")
     if removed_duplicates:
         warnings.append(f"Очистка банка заданий удалила дубли заданий: {removed_duplicates}.")
     return cleaned, warnings
 
 
 def clean_topic(value: str) -> str:
-    value = clean_text(value)
-    value = re.split(
-        r"\s+(?:Вводная лекция|Цель данной темы|В процессе изучения темы|На изучение|На изучение темы|Рассматривается|Данная тема)\b",
-        value,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0]
-    value = re.sub(r"\s+", " ", value).strip(" .;:-—")
-    return value[:180] or "Общие вопросы дисциплины"
+    return normalize_topic(value)
 
 
 def clean_text(value: str | None) -> str:

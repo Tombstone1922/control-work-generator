@@ -8,6 +8,7 @@ from app.schemas import (
     AssessmentFundValidation,
     ProgramAnalysis,
 )
+from app.services.assessment_item_smart_builder import normalize_topic
 
 DEFAULT_LEVELS = [
     "Пороговый (удовлетворительно)",
@@ -231,25 +232,13 @@ def _clean_topics(topics: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for topic in topics:
-        cleaned = _clean_topic(topic)
+        cleaned = normalize_topic(topic)
         key = cleaned.lower().replace("ё", "е")
         if not cleaned or key in seen:
             continue
         seen.add(key)
         result.append(cleaned)
     return result or ["Общие положения дисциплины"]
-
-
-def _clean_topic(value: str) -> str:
-    value = (value or "").replace("\ufffe", "-").replace("\u00ad", "")
-    value = re.sub(r"\s+", " ", value).strip(" .;:-—")
-    value = re.split(
-        r"\s+(?:Вводная лекция|Цель данной темы|В процессе изучения темы|На изучение|Рассматривается|Данная тема)\b",
-        value,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0]
-    return value[:160].strip(" .;:-—")
 
 
 def _guess_discipline_name(filename: str) -> str:

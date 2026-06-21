@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
-from app.services.document_parser import extract_text_from_file
+from app.services.document_parser import extract_text
 
 SUPPORTED_EXTENSIONS = {".docx", ".pdf", ".txt"}
 DEFAULT_CRITERIA = [
@@ -62,7 +62,7 @@ def _write_examples_from_folder(root: Path, output, stats: OMExtractionStats) ->
     stats.files_total += len(files)
     for path in files:
         try:
-            text = extract_text_from_file(path)
+            text = extract_text(path)
             examples = extract_om_examples(text, path.name)
             for record in examples:
                 output.write(json.dumps(record, ensure_ascii=False) + "\n")

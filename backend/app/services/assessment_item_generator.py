@@ -1,9 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import cycle
 from uuid import uuid4
 
 from app.schemas import AssessmentCompetencyRead, AssessmentFundSection, AssessmentItemRead
-from app.services.assessment_item_smart_builder import build_smart_task
+from app.services.contextual_task_builder import build_contextual_task
 
 
 @dataclass
@@ -13,6 +13,8 @@ class ItemGenerationContext:
     topics: list[str]
     competencies: list[AssessmentCompetencyRead]
     max_items: int
+    discipline_name: str = ""
+    used_texts: list[str] = field(default_factory=list)
 
 
 def generate_items_for_section(context: ItemGenerationContext) -> list[AssessmentItemRead]:
@@ -29,19 +31,24 @@ def generate_items_for_section(context: ItemGenerationContext) -> list[Assessmen
     topic_cycle = cycle(topics)
     competency_cycle = cycle(competencies) if competencies else None
     result: list[AssessmentItemRead] = []
+    used_texts = context.used_texts
 
     for index in range(count):
         raw_topic = next(topic_cycle)
         competency = next(competency_cycle) if competency_cycle else None
         difficulty = _difficulty_for_index(index)
         item_type = _item_type_for_assessment(context.section.assessment_type)
-        task = build_smart_task(
+        task = build_contextual_task(
+            discipline_name=context.discipline_name,
             topic=raw_topic,
+            all_topics=topics,
             assessment_type=context.section.assessment_type,
             item_type=item_type,
             index=index,
             difficulty=difficulty,
+            used_texts=used_texts,
         )
+        used_texts.append(task.text)
         indicator = competency.indicators[0] if competency and competency.indicators else ""
 
         result.append(
@@ -58,8 +65,8 @@ def generate_items_for_section(context: ItemGenerationContext) -> list[Assessmen
                 text=task.text,
                 answer=task.answer,
                 criteria=task.criteria,
-                source_context=f"Smart FOS task builder; topic_family={task.topic_family}; topic=«{task.topic}»",
-                source_kind="smart_template",
+                source_context=f"Knowledge-aware FOS builder; topic_family={task.topic_family}; topic=«{task.topic}»",
+                source_kind="knowledge_context",
                 status="draft",
             )
         )

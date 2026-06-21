@@ -68,8 +68,9 @@ def build_assessment_fund(
     discipline_name: str | None = None,
     source_text: str | None = None,
 ) -> AssessmentFundDraft:
-    name = (discipline_name or _guess_discipline_name(program.filename)).strip()
-    topics = program.topics or ["Общие положения дисциплины"]
+    source_text = source_text or program.text_preview
+    name = (discipline_name or _extract_discipline_name(source_text) or _guess_discipline_name(program.filename)).strip()
+    topics = _clean_topics(program.topics or ["Общие положения дисциплины"])
     competencies = _build_competencies(program)
     assessment_types = _detect_assessment_types(source_text or program.text_preview)
     sections = _build_sections(topics, assessment_types)
@@ -169,18 +170,18 @@ def _build_sections(topics: list[str], assessment_types: list[str]) -> list[Asse
 def _planned_items(assessment_type: str, topics: list[str]) -> int:
     count = max(len(topics), 1)
     return {
-        "oral": count * 5,
-        "practice": count * 4,
-        "exam_questions": max(count * 2, 20),
-        "exam_practice": max(count, 10),
-        "credit": max(count * 2, 20),
-        "control_work": max(count, 10),
-        "coursework": max(min(count, 20), 5),
-        "course_project": max(min(count, 20), 5),
-        "laboratory": max(count, 8),
-        "test_bank": max(count * 5, 40),
-        "report_topics": max(min(count * 2, 30), 10),
-        "diagnostic": max(count * 3, 30),
+        "oral": count * 3,
+        "practice": count * 2,
+        "exam_questions": max(count * 2, 12),
+        "exam_practice": max(count, 6),
+        "credit": max(count * 2, 12),
+        "control_work": max(count, 6),
+        "coursework": max(min(count, 12), 3),
+        "course_project": max(min(count, 12), 3),
+        "laboratory": max(count, 6),
+        "test_bank": max(count * 3, 20),
+        "report_topics": max(min(count * 2, 20), 6),
+        "diagnostic": max(count * 2, 12),
         "competency_matrix": 0,
         "grading_rubric": 0,
     }.get(assessment_type, 0)
@@ -210,11 +211,66 @@ def _detect_assessment_types(source_text: str) -> list[str]:
     return list(dict.fromkeys(types))
 
 
+def _extract_discipline_name(text: str) -> str:
+    patterns = [
+        r"по дисциплине\s+(.+?)\s+(?:направления|направлению|профиль|формы обучения|форма обучения)",
+        r"дисциплин[ые]\s+«([^»]+)»",
+        r"дисциплина\s+«([^»]+)»",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        value = _clean_discipline_name(match.group(1))
+        if _is_valid_discipline_name(value):
+            return value
+    return ""
+
+
+def _clean_topics(topics: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        cleaned = _clean_topic(topic)
+        key = cleaned.lower().replace("ё", "е")
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        result.append(cleaned)
+    return result or ["Общие положения дисциплины"]
+
+
+def _clean_topic(value: str) -> str:
+    value = (value or "").replace("\ufffe", "-").replace("\u00ad", "")
+    value = re.sub(r"\s+", " ", value).strip(" .;:-—")
+    value = re.split(
+        r"\s+(?:Вводная лекция|Цель данной темы|В процессе изучения темы|На изучение|Рассматривается|Данная тема)\b",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return value[:160].strip(" .;:-—")
+
+
 def _guess_discipline_name(filename: str) -> str:
     value = re.sub(r"\.(docx|pdf|txt)$", "", filename, flags=re.IGNORECASE)
     value = re.sub(r"[_-]+", " ", value)
-    value = re.sub(r"\b(рпд|рабочая программа|program)\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(рпд|рабочая программа|program|rp)\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b\d{1,5}(?:\.\d{1,5})*\b", "", value)
     return re.sub(r"\s+", " ", value).strip() or "Наименование дисциплины"
+
+
+def _clean_discipline_name(value: str) -> str:
+    value = re.sub(r"\s+", " ", value).strip(" .;:-—\t\n\r\"«»")
+    value = re.sub(r"^[А-ЯA-ZБ]?\.?\d+(?:\.\d+)*\s*", "", value)
+    return value[:180].strip(" .;:-—\t\n\r\"«»")
+
+
+def _is_valid_discipline_name(value: str) -> bool:
+    if not 4 <= len(value) <= 180:
+        return False
+    lower = value.lower()
+    return not any(word in lower for word in ("министерство", "университет", "кафедра", "направления подготовки"))
 
 
 def _section_description(assessment_type: str) -> str:

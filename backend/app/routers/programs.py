@@ -15,12 +15,18 @@ from app.repositories import (
 )
 from app.schemas import ProgramAnalysis, RpdAnalysisReport, RpdDiagnostics
 from app.security import get_current_user
+from app.services.discipline_profile import enrich_analysis_with_discipline_profile
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
 
 router = APIRouter(prefix="/api/programs", tags=["programs"])
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
+    analysis = analyze_rpd_text(text)
+    return enrich_analysis_with_discipline_profile(filename, text, analysis)
 
 
 def _build_program_schema(program_id: str, filename: str, text: str, analysis: RpdAnalysisResult) -> ProgramAnalysis:
@@ -83,7 +89,7 @@ async def upload_program(
             detail="Не удалось извлечь текст из документа. Проверьте, что файл содержит текстовый слой.",
         )
 
-    result = _build_program_schema(program_id, original_name, text, analyze_rpd_text(text))
+    result = _build_program_schema(program_id, original_name, text, _analyze_program_text(original_name, text))
     save_program(db, result, str(storage_path), owner_user_id=current_user.id)
     return result
 
@@ -103,7 +109,7 @@ def reanalyze_program(
     except (UnsupportedDocumentFormat, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail="Не удалось повторно прочитать исходный файл РПД.") from exc
 
-    result = _build_program_schema(entity.id, entity.filename, text, analyze_rpd_text(text))
+    result = _build_program_schema(entity.id, entity.filename, text, _analyze_program_text(entity.filename, text))
     update_program_analysis(db, entity, result)
     return result
 

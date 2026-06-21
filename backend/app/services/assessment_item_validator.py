@@ -8,6 +8,7 @@ from app.assessment_item_validation import (
     AssessmentItemsValidation,
 )
 from app.schemas import AssessmentItemRead
+from app.services.assessment_item_smart_builder import normalize_topic
 
 PLACEHOLDER_MARKERS = (
     "формируется и уточняется преподавателем",
@@ -20,7 +21,8 @@ def validate_assessment_items(
     topics: list[str],
     competency_codes: list[str],
 ) -> AssessmentItemsValidation:
-    normalized_topics = [topic.strip() for topic in topics if topic.strip()]
+    normalized_topics = [normalize_topic(topic) for topic in topics if topic.strip()]
+    normalized_topics = list(dict.fromkeys(topic for topic in normalized_topics if topic))
     normalized_competencies = [code.strip() for code in competency_codes if code.strip()]
 
     empty_answer_item_ids = [item.id for item in items if not item.answer.strip()]
@@ -33,7 +35,7 @@ def validate_assessment_items(
     missing_topic_item_ids = [item.id for item in items if not item.topic.strip()]
     missing_competency_item_ids = [item.id for item in items if not item.competency_code.strip()]
 
-    covered_topics = {item.topic.strip() for item in items if item.topic.strip()}
+    covered_topics = {normalize_topic(item.topic) for item in items if item.topic.strip()}
     covered_competencies = {item.competency_code.strip() for item in items if item.competency_code.strip()}
     duplicate_groups = _find_duplicate_groups(items)
     duplicate_ids = {item_id for group in duplicate_groups for item_id in group.item_ids}
@@ -93,7 +95,7 @@ def validate_assessment_items(
 def _build_coverage_rows(topics: list[str], items: list[AssessmentItemRead]) -> list[AssessmentCoverageRow]:
     rows: list[AssessmentCoverageRow] = []
     for topic in topics:
-        topic_items = [item for item in items if item.topic.strip() == topic]
+        topic_items = [item for item in items if normalize_topic(item.topic) == topic]
         section_counts: dict[str, int] = defaultdict(int)
         competencies: set[str] = set()
         for item in topic_items:
@@ -121,6 +123,8 @@ def _find_duplicate_groups(items: list[AssessmentItemRead]) -> list[AssessmentDu
         current_ids = [first.id]
         best_similarity = 0.0
         for second in items[index + 1:]:
+            if first.section_code != second.section_code:
+                continue
             second_text = _normalize_text(second.text)
             if not second_text:
                 continue
@@ -128,7 +132,7 @@ def _find_duplicate_groups(items: list[AssessmentItemRead]) -> list[AssessmentDu
             if pair in used_pairs:
                 continue
             similarity = SequenceMatcher(None, first_text, second_text).ratio()
-            if similarity >= 0.9:
+            if similarity >= 0.92:
                 current_ids.append(second.id)
                 best_similarity = max(best_similarity, similarity)
                 used_pairs.add(pair)

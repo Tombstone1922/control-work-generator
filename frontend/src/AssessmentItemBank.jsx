@@ -5,8 +5,9 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   const [validation, setValidation] = useState(null);
   const [trainingStats, setTrainingStats] = useState(null);
   const [generationSummary, setGenerationSummary] = useState(null);
-  const [localLlmStatus, setLocalLlmStatus] = useState(null);
-  const [isCheckingLlm, setCheckingLlm] = useState(false);
+  const [contextSummary, setContextSummary] = useState(null);
+  const [selectedContext, setSelectedContext] = useState(null);
+  const [isLoadingContext, setLoadingContext] = useState(false);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [teacherComment, setTeacherComment] = useState('');
@@ -47,12 +48,18 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     setValidation(null);
     setGenerationSummary(null);
     setTeacherComment('');
+    setSelectedContext(null);
     loadItems();
     loadTrainingStats();
-    loadLocalLlmStatus(false);
+    loadContextSummary();
   }, [fund?.fund_id]);
 
   useEffect(() => setTeacherComment(''), [selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedItem?.topic || !fund?.fund_id) return;
+    loadTopicContext(selectedItem.topic, false);
+  }, [selectedItem?.id, selectedItem?.topic, fund?.fund_id]);
 
   async function loadItems(sectionCode = '') {
     if (!fund?.fund_id) return;
@@ -79,38 +86,28 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     }
   }
 
-  async function loadLocalLlmStatus(showSuccess = true) {
-    setCheckingLlm(true);
+  async function loadContextSummary() {
+    if (!fund?.fund_id) return;
     try {
-      const response = await api.get('/api/local-llm/status');
-      setLocalLlmStatus(response.data);
-      if (showSuccess) {
-        setSuccess(response.data.available ? 'Локальная LLM доступна.' : 'Локальная LLM пока недоступна. Проверьте llama-server и .env.');
-      }
+      const response = await api.get(`/api/context-module/${fund.fund_id}/summary`);
+      setContextSummary(response.data);
     } catch (err) {
-      setLocalLlmStatus(null);
-      if (showSuccess) setError(err.response?.data?.detail || 'Не удалось проверить локальную LLM.');
-    } finally {
-      setCheckingLlm(false);
+      setContextSummary(null);
     }
   }
 
-  async function testLocalLlm() {
-    setCheckingLlm(true);
-    setError('');
-    setSuccess('');
+  async function loadTopicContext(topic = selectedItem?.topic, showSuccess = true) {
+    if (!fund?.fund_id || !topic) return;
+    setLoadingContext(true);
     try {
-      const response = await api.post('/api/local-llm/test');
-      if (response.data.ok) {
-        setSuccess('Qwen3 вернула тестовое задание в JSON. Интеграция работает.');
-      } else {
-        setError(response.data.error || 'Локальная LLM не прошла тест.');
-      }
-      await loadLocalLlmStatus(false);
+      const response = await api.get(`/api/context-module/${fund.fund_id}/topic`, { params: { topic } });
+      setSelectedContext(response.data);
+      if (showSuccess) setSuccess('Контекстный модуль обновлен.');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось выполнить тест локальной LLM.');
+      setSelectedContext(null);
+      if (showSuccess) setError(err.response?.data?.detail || 'Не удалось загрузить контекстный модуль.');
     } finally {
-      setCheckingLlm(false);
+      setLoadingContext(false);
     }
   }
 
@@ -135,7 +132,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       setGenerationSummary(response.data.items ? response.data : null);
       await onFundRefresh();
       await validateItems(false);
-      await loadLocalLlmStatus(false);
+      await loadContextSummary();
       setSuccess(successMessage(response.data.used_mode));
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
@@ -227,6 +224,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       });
       setItems((current) => current.map((item) => item.id === response.data.id ? response.data : item));
       await validateItems(false);
+      await loadTopicContext(response.data.topic, false);
       setSuccess('Задание сохранено. Теперь его можно добавить в обучающую выборку.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить задание.');
@@ -267,9 +265,9 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
 
       <div className="itemBankHero">
         <div>
-          <span className="eyebrow">Контур генерации</span>
-          <h3>РПД → база знаний → антидубли → локальная Qwen3</h3>
-          <p className="muted">Система сначала строит предметный контекст, затем улучшает формулировки через локальную LLM и повторно проверяет банк заданий.</p>
+          <span className="eyebrow">Context-module</span>
+          <h3>РПД → контекстный модуль → база знаний → антидубли</h3>
+          <p className="muted">Интерфейс показывает, какой предметный контекст система использует для генерации: связанные темы, ключевые термины, результаты обучения и источник данных.</p>
         </div>
         <div className="sourceMiniStats">
           {Object.entries(sourceStats).length ? Object.entries(sourceStats).map(([kind, count]) => <span key={kind}><SourceBadge kind={kind} /> <strong>{count}</strong></span>) : <span className="muted">Источники появятся после генерации.</span>}
@@ -277,7 +275,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
       </div>
 
       <TrainingDatasetPanel stats={trainingStats} downloadTrainingDataset={downloadTrainingDataset} isExportingDataset={isExportingDataset} />
-      <LocalLlmPanel status={localLlmStatus} isChecking={isCheckingLlm} refreshStatus={() => loadLocalLlmStatus(true)} testLocalLlm={testLocalLlm} />
+      <ContextModuleSummaryPanel summary={contextSummary} />
       <LearningModePanel generationMode={generationMode} setGenerationMode={setGenerationMode} learnedMaxItems={learnedMaxItems} setLearnedMaxItems={setLearnedMaxItems} narrowMaxItems={narrowMaxItems} setNarrowMaxItems={setNarrowMaxItems} fallbackToTemplate={fallbackToTemplate} setFallbackToTemplate={setFallbackToTemplate} stats={trainingStats} />
       {generationSummary && <GenerationSummary generation={generationSummary} />}
 
@@ -306,6 +304,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
           {selectedItem ? (
             <>
               <div className="questionTopline"><div><h3>Редактор задания</h3><SourceBadge kind={selectedItem.source_kind} /></div><div className="actionGroup"><button className="danger" type="button" onClick={deleteSelectedItem}>Удалить</button><button className="primary" type="button" onClick={saveSelectedItem} disabled={isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить'}</button></div></div>
+              <ContextModuleTopicPanel context={selectedContext} isLoading={isLoadingContext} refresh={() => loadTopicContext(selectedItem.topic, true)} />
               <label>Формулировка<textarea value={selectedItem.text} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
               <label>Эталонный ответ<textarea value={selectedItem.answer} onChange={(event) => patchSelectedItem({ answer: event.target.value })} /></label>
               <div className="miniGrid"><label>Тема<input value={selectedItem.topic} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
@@ -325,15 +324,25 @@ function TrainingDatasetPanel({ stats, downloadTrainingDataset, isExportingDatas
   return <section className="trainingDatasetPanel"><div><h3>Обучающая выборка</h3><p className="muted">Здесь накапливаются экспертно подтвержденные примеры для будущего дообучения узкой модели.</p></div><div className="itemBankStats"><span>Всего: <strong>{stats?.total_examples || 0}</strong></span><span>Хороших: <strong>{stats?.good_examples || 0}</strong></span><span>Плохих: <strong>{stats?.bad_examples || 0}</strong></span><span>На доработку: <strong>{stats?.revision_examples || 0}</strong></span><span>Тем: <strong>{stats?.topics_count || 0}</strong></span><span>Компетенций: <strong>{stats?.competencies_count || 0}</strong></span></div><button className="download" type="button" onClick={downloadTrainingDataset} disabled={isExportingDataset}>{isExportingDataset ? 'Экспортируем...' : 'Скачать JSONL датасет'}</button></section>;
 }
 
-function LocalLlmPanel({ status, isChecking, refreshStatus, testLocalLlm }) {
-  const healthClass = status?.available ? 'llmReady' : status?.enabled ? 'llmWarning' : 'llmDisabled';
-  const title = status?.available ? 'Qwen3 подключена' : status?.enabled ? 'Qwen3 включена, но недоступна' : 'Локальная LLM выключена';
-  return <section className={`localLlmPanel ${healthClass}`}><div><span className="eyebrow">Локальная LLM</span><h3>{title}</h3><p className="muted">{status?.enabled ? `${status.base_url || ''} · ${status.model || ''}` : 'Включите LOCAL_LLM_ENABLED=true в backend/.env после запуска llama-server.'}</p>{status?.latency_ms !== null && status?.latency_ms !== undefined && <small>Задержка ответа: {status.latency_ms} мс</small>}{status?.error && <small>{status.error}</small>}</div><div className="actionGroup"><button className="secondary" type="button" onClick={refreshStatus} disabled={isChecking}>{isChecking ? 'Проверяем...' : 'Проверить статус'}</button><button className="primary" type="button" onClick={testLocalLlm} disabled={isChecking || !status?.enabled}>{isChecking ? 'Тестируем...' : 'Тест JSON'}</button></div></section>;
+function ContextModuleSummaryPanel({ summary }) {
+  return <section className="contextModulePanel"><div><span className="eyebrow">Context-module summary</span><h3>{summary?.discipline_name || 'Контекст дисциплины'}</h3><p className="muted">Сводка предметной базы, из которой генератор берет термины и связи между темами.</p></div><div className="contextModuleStats"><span>Тем: <strong>{summary?.topics_total || 0}</strong></span><span>Источники: <strong>{summary?.sources?.join(', ') || '—'}</strong></span></div>{summary?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={summary.key_terms} />}{summary?.sample_topics?.length > 0 && <ChipList title="Примеры тем" values={summary.sample_topics} />}</section>;
+}
+
+function ContextModuleTopicPanel({ context, isLoading, refresh }) {
+  return <section className="contextTopicPanel"><div className="contextTopicHeader"><div><span className="eyebrow">Context-module for selected item</span><h3>{context?.topic || 'Контекст темы'}</h3><p className="muted">Источник: {context?.source || '—'} · профиль: {context?.profile_name || '—'}</p></div><button className="secondary" type="button" onClick={refresh} disabled={isLoading}>{isLoading ? 'Обновляем...' : 'Обновить контекст'}</button></div>{context?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={context.key_terms} />}{context?.related_topics?.length > 0 && <ChipList title="Связанные темы" values={context.related_topics} />}{context?.learning_outcomes?.length > 0 && <CompactList title="Результаты обучения" values={context.learning_outcomes} />}{context?.competencies?.length > 0 && <ChipList title="Компетенции из контекста" values={context.competencies} />}</section>;
+}
+
+function ChipList({ title, values }) {
+  return <div className="chipList"><strong>{title}</strong><div>{values.slice(0, 12).map((value) => <span key={value}>{value}</span>)}</div></div>;
+}
+
+function CompactList({ title, values }) {
+  return <div className="compactList"><strong>{title}</strong><ul>{values.slice(0, 4).map((value) => <li key={value}>{value}</li>)}</ul></div>;
 }
 
 function LearningModePanel({ generationMode, setGenerationMode, learnedMaxItems, setLearnedMaxItems, narrowMaxItems, setNarrowMaxItems, fallbackToTemplate, setFallbackToTemplate, stats }) {
   const hasGoodExamples = (stats?.good_examples || 0) > 0;
-  return <section className="learningModePanel"><div><h3>Генерация с учетом обучающей выборки</h3><p className="muted">Узкая модель ФОС использует хорошие экспертные примеры. Локальная Qwen3, если включена, работает сверху как методист-редактор формулировок.</p></div><div className="learningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="template">Шаблонный генератор</option><option value="learned">По экспертным примерам</option><option value="narrow_llm">Узкая модель ФОС</option><option value="hybrid">Гибрид: узкая модель + шаблоны</option></select></label><label>Заданий по экспертным примерам<input type="number" min="1" max="200" value={learnedMaxItems} onChange={(event) => setLearnedMaxItems(Number(event.target.value))} disabled={generationMode !== 'learned'} /></label><label>Заданий узкой моделью<input type="number" min="1" max="200" value={narrowMaxItems} onChange={(event) => setNarrowMaxItems(Number(event.target.value))} disabled={generationMode !== 'hybrid'} /></label><label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={fallbackToTemplate} onChange={(event) => setFallbackToTemplate(event.target.checked)} />Если примеров мало — использовать шаблоны</label></div>{!hasGoodExamples && generationMode !== 'template' && <div className="notice">Для режимов на обучающей выборке нужен хотя бы один пример с меткой “Хороший пример”.</div>}</section>;
+  return <section className="learningModePanel"><div><h3>Генерация с учетом обучающей выборки</h3><p className="muted">Узкая модель ФОС использует хорошие экспертные примеры, а context-module объясняет предметный контур задания.</p></div><div className="learningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="template">Шаблонный генератор</option><option value="learned">По экспертным примерам</option><option value="narrow_llm">Узкая модель ФОС</option><option value="hybrid">Гибрид: узкая модель + шаблоны</option></select></label><label>Заданий по экспертным примерам<input type="number" min="1" max="200" value={learnedMaxItems} onChange={(event) => setLearnedMaxItems(Number(event.target.value))} disabled={generationMode !== 'learned'} /></label><label>Заданий узкой моделью<input type="number" min="1" max="200" value={narrowMaxItems} onChange={(event) => setNarrowMaxItems(Number(event.target.value))} disabled={generationMode !== 'hybrid'} /></label><label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={fallbackToTemplate} onChange={(event) => setFallbackToTemplate(event.target.checked)} />Если примеров мало — использовать шаблоны</label></div>{!hasGoodExamples && generationMode !== 'template' && <div className="notice">Для режимов на обучающей выборке нужен хотя бы один пример с меткой “Хороший пример”.</div>}</section>;
 }
 
 function GenerationSummary({ generation }) {
@@ -358,8 +367,8 @@ function downloadBlob(data, filename) {
 function successMessage(usedMode) {
   if (usedMode === 'narrow_llm') return 'Банк заданий сформирован узкой моделью ФОС на экспертных примерах.';
   if (usedMode === 'learned') return 'Банк заданий сформирован на основе обучающей выборки.';
-  if (usedMode === 'hybrid') return 'Банк заданий сформирован гибридно: узкая модель/примеры + шаблоны.';
-  return 'Банк заданий сформирован контекстным генератором. Если Qwen3 включена, она улучшила часть формулировок.';
+  if (usedMode === 'hybrid') return 'Банк заданий сформирован гибридно: узкая модель/примеры + контекстный модуль.';
+  return 'Банк заданий сформирован контекстным генератором и проверен антидублем.';
 }
 
 function sourceKindLabel(value) {
@@ -367,8 +376,8 @@ function sourceKindLabel(value) {
     template: 'шаблон',
     smart_template: 'умный шаблон',
     smart_builder: 'smart-builder',
-    knowledge_context: 'база знаний',
-    local_llm_qwen3: 'Qwen3 local',
+    knowledge_context: 'context-module',
+    local_llm_qwen3: 'LLM-refiner',
     learned_example: 'по экспертному примеру',
     narrow_llm: 'узкая модель ФОС',
     trained_narrow_llm: 'обученная узкая модель',

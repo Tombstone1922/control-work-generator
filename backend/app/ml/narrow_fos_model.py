@@ -8,7 +8,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-MODEL_VERSION = "narrow-fos-local-model-v0.1"
+MODEL_VERSION = "narrow-fos-local-model-v0.2"
+BAD_MODEL_PHRASES = (
+    "перечень компетенций",
+    "уровни их сформированности",
+    "в процессе освоения образовательной программы",
+    "критерии определения сформированности",
+    "индекс компетенции",
+    "содержание компетенции",
+    "код и наименование индикатора",
+    "виды занятий для формирования",
+    "оценочные средства для оценки",
+    "методические, оценочные материалы",
+    "процедуры оценивания сформированности",
+    "#default#",
+)
 
 
 @dataclass
@@ -49,27 +63,36 @@ class NarrowFOSModel:
         examples: list[ModelExample] = []
         document_frequency: Counter[str] = Counter()
         phrase_bank: dict[str, list[str]] = defaultdict(list)
+        seen_texts: set[str] = set()
+        skipped_noisy = 0
+        skipped_duplicates = 0
 
         for index, record in enumerate(records):
             if record.get("quality_label") not in {None, "good"}:
                 continue
             input_data = record.get("input", {}) or {}
             output_data = record.get("output", {}) or {}
-            text = str(output_data.get("text") or "").strip()
-            if len(text) < 8:
+            text = _clean_text(str(output_data.get("text") or ""))
+            if len(text) < 8 or _is_bad_model_text(text):
+                skipped_noisy += 1
                 continue
+            key = _normalize_key(text)
+            if key in seen_texts:
+                skipped_duplicates += 1
+                continue
+            seen_texts.add(key)
             example = ModelExample(
                 id=str(record.get("id") or f"model-example-{index}"),
                 discipline_name=str(input_data.get("discipline_name") or ""),
-                topic=str(input_data.get("topic") or ""),
+                topic=_clean_text(str(input_data.get("topic") or "")),
                 competency_code=str(input_data.get("competency_code") or ""),
                 indicator=str(input_data.get("indicator") or ""),
                 assessment_type=str(input_data.get("assessment_type") or "oral"),
                 item_type=str(input_data.get("item_type") or "theoretical_open"),
                 difficulty=str(input_data.get("difficulty") or "medium"),
                 text=text,
-                answer=str(output_data.get("answer") or ""),
-                criteria=[str(item).strip() for item in output_data.get("criteria", []) if str(item).strip()],
+                answer=_clean_text(str(output_data.get("answer") or "")),
+                criteria=[_clean_text(str(item)) for item in output_data.get("criteria", []) if _clean_text(str(item))],
                 source=str(record.get("source") or "training_dataset"),
                 tokens=_tokenize(" ".join([
                     str(input_data.get("discipline_name") or ""),
@@ -89,6 +112,8 @@ class NarrowFOSModel:
             "model_version": MODEL_VERSION,
             "created_at": datetime.utcnow().isoformat(),
             "examples_total": len(examples),
+            "skipped_noisy": skipped_noisy,
+            "skipped_duplicates": skipped_duplicates,
             "assessment_types": sorted({example.assessment_type for example in examples}),
             "sources": dict(Counter(example.source for example in examples)),
         }
@@ -114,6 +139,7 @@ class NarrowFOSModel:
                 tokens=item.get("tokens", []),
             )
             for item in data.get("examples", [])
+            if not _is_bad_model_text(item.get("text", ""))
         ]
         return cls(examples=examples, idf=data.get("idf", {}), phrase_bank=data.get("phrase_bank", {}), metadata=data.get("metadata", {}))
 
@@ -133,7 +159,8 @@ class NarrowFOSModel:
         if not self.examples:
             return None
         query = _tokenize(" ".join([discipline_name, topic, competency_code, indicator, assessment_type, item_type, difficulty]))
-        best = max(self.examples, key=lambda example: self._score(query, topic, competency_code, assessment_type, item_type, difficulty, example))
+        candidates = [example for example in self.examples if example.assessment_type == assessment_type] or self.examples
+        best = max(candidates, key=lambda example: self._score(query, topic, competency_code, assessment_type, item_type, difficulty, example))
         score = self._score(query, topic, competency_code, assessment_type, item_type, difficulty, best)
         return Prediction(
             example=best,
@@ -204,7 +231,7 @@ def _simple_similarity(left: str, right: str) -> float:
 
 
 def _adapt_text(text: str, source_topic: str, target_topic: str) -> str:
-    text = (text or "").strip()
+    text = _clean_text(text)
     if not text:
         return ""
     if source_topic and target_topic and source_topic.lower() in text.lower():
@@ -216,3 +243,21 @@ def _default_criteria(item_type: str) -> list[str]:
     if item_type in {"practice", "control_work", "laboratory"}:
         return ["Практическое задание выполнено полностью.", "Ход решения обоснован.", "Сформулирован корректный вывод."]
     return ["Раскрыты ключевые понятия темы.", "Ответ логично структурирован.", "Приведен пример или обоснование."]
+
+
+def _clean_text(value: str) -> str:
+    value = (value or "").replace("\ufffe", "-").replace("\u00ad", "")
+    value = value.replace("#default#", "")
+    value = re.sub(r"\s+", " ", value).strip(" .;:-—\t\n\r")
+    return value
+
+
+def _is_bad_model_text(value: str) -> bool:
+    lower = _clean_text(value).lower()
+    return any(phrase in lower for phrase in BAD_MODEL_PHRASES)
+
+
+def _normalize_key(value: str) -> str:
+    value = value.lower().replace("ё", "е")
+    value = re.sub(r"[^a-zа-я0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()

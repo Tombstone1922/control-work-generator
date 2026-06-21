@@ -76,7 +76,7 @@ def _add_title_page(document: Document, fund: AssessmentFundResponse) -> None:
     _add_centered(document, "«Саратовский государственный технический университет имени Гагарина Ю.А.»", size=14)
     _add_centered(document, "Кафедра", size=14, space_before=8)
     _add_centered(document, "Оценочные материалы по дисциплине", bold=True, size=16, space_before=80)
-    _add_centered(document, f"«{fund.discipline_name}»", bold=True, size=16, space_before=12)
+    _add_centered(document, f"«{_clean_doc_text(fund.discipline_name)}»", bold=True, size=16, space_before=12)
     _add_centered(document, "направления подготовки", size=14, space_before=12)
     _add_centered(document, "09.03.02 Информационные системы и технологии", size=14)
     _add_centered(document, "Профиль", size=14, space_before=12)
@@ -89,7 +89,7 @@ def _add_competency_matrix(document: Document, fund: AssessmentFundResponse) -> 
     _add_heading(document, "1. Перечень компетенций и уровни их сформированности по дисциплине", level=1)
     _add_body(
         document,
-        f"В процессе освоения образовательной программы у обучающегося в ходе изучения дисциплины «{fund.discipline_name}» должны сформироваться компетенции: {_competency_codes(fund)}.",
+        f"В процессе освоения образовательной программы у обучающегося в ходе изучения дисциплины «{_clean_doc_text(fund.discipline_name)}» должны сформироваться компетенции: {_competency_codes(fund)}.",
     )
     _add_body(document, "Критерии определения сформированности компетенций на различных уровнях их формирования приведены ниже.")
 
@@ -108,20 +108,20 @@ def _add_competency_block(document: Document, competency) -> None:
     _set_cell_text(summary.rows[0].cells[0], "Индекс компетенции", bold=True)
     _set_cell_text(summary.rows[0].cells[1], "Содержание компетенции", bold=True)
     row = summary.add_row().cells
-    _set_cell_text(row[0], competency.code)
-    _set_cell_text(row[1], competency.description or f"Компетенция {competency.code}, формируемая в рамках освоения дисциплины.")
+    _set_cell_text(row[0], _clean_doc_text(competency.code))
+    _set_cell_text(row[1], _clean_doc_text(competency.description or f"Компетенция {competency.code}, формируемая в рамках освоения дисциплины."))
 
     indicator_table = document.add_table(rows=1, cols=3)
     indicator_table.style = "Table Grid"
     indicator_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for index, value in enumerate(["Код и наименование индикатора достижения компетенции", "Виды занятий для формирования компетенции", "Оценочные средства для оценки уровня сформированности компетенции"]):
+    for index, value in enumerate(["Код и наименование индикатора достижения компетенции", "Виды занятий для формирования компетенции", "Оценочные средства"]):
         _set_cell_text(indicator_table.rows[0].cells[index], value, bold=True)
     indicators = competency.indicators or [f"Индикатор достижения {competency.code} требует уточнения."]
-    for indicator in indicators:
+    for indicator in indicators[:3]:
         cells = indicator_table.add_row().cells
-        _set_cell_text(cells[0], indicator)
+        _set_cell_text(cells[0], _clean_doc_text(indicator))
         _set_cell_text(cells[1], "лекции, практические занятия, самостоятельная работа")
-        _set_cell_text(cells[2], "выполнение практических заданий, вопросы текущего контроля, вопросы промежуточной аттестации, тестовые задания")
+        _set_cell_text(cells[2], "устный опрос, практические задания, промежуточная аттестация, диагностическая работа")
 
     _add_body(document, "Уровни освоения компетенции", bold=True, first_line=False)
     levels = document.add_table(rows=1, cols=2)
@@ -137,20 +137,11 @@ def _add_competency_block(document: Document, competency) -> None:
 
 
 def _competency_level_rows(competency) -> list[tuple[str, str]]:
-    base = competency.description or f"содержание компетенции {competency.code}"
+    base = _clean_doc_text(competency.description or f"содержание компетенции {competency.code}").rstrip(".;")
     return [
-        (
-            "Продвинутый (отлично)",
-            f"Знает, умеет и владеет материалом в превосходной мере; уверенно раскрывает {base}; самостоятельно применяет знания при решении учебных и профессионально ориентированных задач; допускает несущественные неточности.",
-        ),
-        (
-            "Повышенный (хорошо)",
-            f"Знает и умеет применять основные положения компетенции; в достаточной мере раскрывает {base}; решает типовые задачи с отдельными неточностями, не искажающими результат.",
-        ),
-        (
-            "Пороговый (удовлетворительно)",
-            f"В минимально допустимой мере демонстрирует освоение компетенции; раскрывает базовые положения по направлению {competency.code}; выполняет типовые задания при наличии методической поддержки.",
-        ),
+        ("Продвинутый (отлично)", f"Обучающийся полно и аргументированно раскрывает {base}, самостоятельно применяет знания при решении учебных и профессионально ориентированных задач."),
+        ("Повышенный (хорошо)", f"Обучающийся раскрывает основные положения компетенции, применяет материал при решении типовых задач, допускает отдельные неточности."),
+        ("Пороговый (удовлетворительно)", f"Обучающийся демонстрирует минимально допустимое освоение компетенции {competency.code}, выполняет типовые задания при наличии методической поддержки."),
     ]
 
 
@@ -178,7 +169,7 @@ def _add_assessment_procedures(
         for section in diagnostic_sections:
             section_items = items_by_section.get(section.code, [])
             if section_items:
-                _add_diagnostic_table(document, section_items)
+                _add_diagnostic_blocks(document, section_items)
             else:
                 _add_body(document, "Диагностические задания пока не сформированы.", italic=True)
     else:
@@ -208,35 +199,31 @@ def _add_sections_by_type(
 def _add_grouped_items(document: Document, items: list[AssessmentItemRead]) -> None:
     grouped: dict[str, list[AssessmentItemRead]] = defaultdict(list)
     for item in items:
-        grouped[item.topic or "Тема не указана"].append(item)
+        grouped[_clean_doc_text(item.topic or "Тема не указана")].append(item)
 
     for topic_index, (topic, topic_items) in enumerate(grouped.items(), start=1):
         _add_body(document, f"Тема {topic_index}. {topic}", bold=True, first_line=False)
         for item_index, item in enumerate(topic_items, start=1):
-            _add_body(document, f"{item_index}. {item.text}", first_line=False)
+            _add_body(document, f"{item_index}. {_clean_doc_text(item.text)}", first_line=False)
 
 
-def _add_diagnostic_table(document: Document, items: list[AssessmentItemRead]) -> None:
-    table = document.add_table(rows=1, cols=6)
-    table.style = "Table Grid"
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    headers = ["Номер задания", "Правильный ответ / ответ", "Содержание вопроса", "Варианты ответа", "Компетенция", "Код и наименование индикатора"]
-    for index, value in enumerate(headers):
-        _set_cell_text(table.rows[0].cells[index], value, bold=True)
+def _add_diagnostic_blocks(document: Document, items: list[AssessmentItemRead]) -> None:
+    _add_body(document, "Итоговая диагностическая работа выполняется в форме набора заданий. Для каждого задания указывается проверяемая компетенция, содержание вопроса, варианты ответа и эталонный ответ.")
     for index, item in enumerate(items, start=1):
-        row = table.add_row().cells
-        _set_cell_text(row[0], str(index))
-        _set_cell_text(row[1], item.answer or "Требует уточнения")
-        _set_cell_text(row[2], item.text)
-        _set_cell_text(row[3], _criteria_as_options(item))
-        _set_cell_text(row[4], item.competency_code or "—")
-        _set_cell_text(row[5], item.indicator or "—")
+        _add_body(document, f"Задание {index}.", bold=True, first_line=False)
+        _add_body(document, f"Содержание вопроса: {_clean_doc_text(item.text)}", first_line=False)
+        if item.criteria:
+            _add_body(document, "Варианты ответа:", bold=True, first_line=False)
+            for option_index, option in enumerate(item.criteria[:4], start=1):
+                _add_body(document, f"{option_index}) {_clean_doc_text(option)}", first_line=False)
+        _add_body(document, f"Эталонный ответ: {_clean_doc_text(item.answer or 'Требует уточнения преподавателем.')}", first_line=False)
+        _add_body(document, f"Компетенция: {_clean_doc_text(item.competency_code or 'не указана')}; индикатор: {_clean_doc_text(item.indicator or 'не указан')}", first_line=False)
 
 
 def _criteria_as_options(item: AssessmentItemRead) -> str:
     if not item.criteria:
         return "—"
-    return "\n".join(f"{index}. {criterion}" for index, criterion in enumerate(item.criteria[:5], start=1))
+    return "\n".join(f"{index}. {_clean_doc_text(criterion)}" for index, criterion in enumerate(item.criteria[:5], start=1))
 
 
 def _add_grading_rubric(document: Document) -> None:
@@ -281,15 +268,16 @@ def _add_answers_appendix(
             continue
         _add_heading(document, section.title, level=2)
         for index, item in enumerate(section_items, start=1):
-            _add_body(document, f"{index}. {item.text}", first_line=False)
-            _add_body(document, f"Эталонный ответ: {item.answer or 'Требует уточнения преподавателем.'}", first_line=False)
-            _add_body(document, "Критерии оценивания:", first_line=False, bold=True)
-            criteria = item.criteria or ["Критерии требуют уточнения преподавателем."]
-            for criterion in criteria:
-                paragraph = document.add_paragraph(criterion, style="List Bullet")
-                paragraph.paragraph_format.first_line_indent = Cm(0)
-                paragraph.paragraph_format.left_indent = Cm(0.75)
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            _add_body(document, f"{index}. {_clean_doc_text(item.text)}", first_line=False)
+            _add_body(document, f"Эталонный ответ: {_clean_doc_text(item.answer or 'Требует уточнения преподавателем.')}", first_line=False)
+            criteria = [_clean_doc_text(value) for value in (item.criteria or []) if _clean_doc_text(value)]
+            if criteria:
+                _add_body(document, "Критерии оценивания:", first_line=False, bold=True)
+                for criterion in criteria[:4]:
+                    paragraph = document.add_paragraph(criterion, style="List Bullet")
+                    paragraph.paragraph_format.first_line_indent = Cm(0)
+                    paragraph.paragraph_format.left_indent = Cm(0.75)
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 
 def _add_validation_appendix(document: Document, validation: AssessmentItemsValidation) -> None:
@@ -318,7 +306,7 @@ def _add_validation_appendix(document: Document, validation: AssessmentItemsVali
     if validation.warnings:
         _add_heading(document, "Предупреждения", level=2)
         for warning in validation.warnings:
-            paragraph = document.add_paragraph(warning, style="List Bullet")
+            paragraph = document.add_paragraph(_clean_doc_text(warning), style="List Bullet")
             paragraph.paragraph_format.first_line_indent = Cm(0)
 
     _add_heading(document, "Матрица покрытия тем", level=2)
@@ -331,7 +319,7 @@ def _add_validation_appendix(document: Document, validation: AssessmentItemsVali
     for row_data in validation.coverage_rows:
         row = coverage.add_row().cells
         sections = "; ".join(f"{key}: {value}" for key, value in row_data.section_counts.items()) or "—"
-        _set_cell_text(row[0], row_data.topic)
+        _set_cell_text(row[0], _clean_doc_text(row_data.topic))
         _set_cell_text(row[1], str(row_data.total_items))
         _set_cell_text(row[2], sections)
         _set_cell_text(row[3], ", ".join(row_data.competencies) or "—")
@@ -339,11 +327,15 @@ def _add_validation_appendix(document: Document, validation: AssessmentItemsVali
     if validation.duplicate_groups:
         _add_heading(document, "Потенциальные дубли", level=2)
         for index, group in enumerate(validation.duplicate_groups, start=1):
-            _add_body(document, f"Группа {index}; сходство {round(group.similarity * 100)}%; связанных заданий: {len(group.item_ids)}. Пример формулировки: {group.sample_text}", first_line=False)
+            _add_body(document, f"Группа {index}; сходство {round(group.similarity * 100)}%; связанных заданий: {len(group.item_ids)}. Пример формулировки: {_clean_doc_text(group.sample_text)}", first_line=False)
 
 
 def _enabled_content_sections(sections: list[AssessmentFundSection]) -> list[AssessmentFundSection]:
-    return [section for section in sections if section.enabled and section.assessment_type not in SPECIAL_SECTION_TYPES]
+    return [
+        section
+        for section in sections
+        if section.enabled and section.assessment_type not in SPECIAL_SECTION_TYPES and section.assessment_type != "diagnostic"
+    ]
 
 
 def _competency_codes(fund: AssessmentFundResponse) -> str:
@@ -352,7 +344,7 @@ def _competency_codes(fund: AssessmentFundResponse) -> str:
 
 
 def _add_heading(document: Document, text: str, level: int, centered: bool = False) -> None:
-    paragraph = document.add_heading(text, level=level)
+    paragraph = document.add_heading(_clean_doc_text(text), level=level)
     paragraph.paragraph_format.first_line_indent = Cm(0)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if centered else WD_ALIGN_PARAGRAPH.LEFT
 
@@ -361,7 +353,7 @@ def _add_body(document: Document, text: str, *, italic: bool = False, bold: bool
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.first_line_indent = Cm(1.25) if first_line else Cm(0)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    run = paragraph.add_run(text)
+    run = paragraph.add_run(_clean_doc_text(text))
     run.italic = italic
     run.bold = bold
     run.font.name = "Times New Roman"
@@ -374,7 +366,7 @@ def _add_centered(document: Document, text: str, *, bold: bool = False, size: in
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph.paragraph_format.first_line_indent = Cm(0)
     paragraph.paragraph_format.space_before = Pt(space_before)
-    run = paragraph.add_run(text)
+    run = paragraph.add_run(_clean_doc_text(text))
     run.bold = bold
     run.font.name = "Times New Roman"
     run._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
@@ -388,7 +380,7 @@ def _set_cell_text(cell, value: str, *, bold: bool = False) -> None:
     paragraph.paragraph_format.first_line_indent = Cm(0)
     paragraph.paragraph_format.line_spacing = 1.0
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = paragraph.add_run(value)
+    run = paragraph.add_run(_clean_doc_text(value))
     run.bold = bold
     run.font.name = "Times New Roman"
     run._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
@@ -411,6 +403,13 @@ def _set_cell_margins(cell, **kwargs: int) -> None:
                 tc_mar.append(node)
             node.set(qn("w:w"), str(kwargs[margin]))
             node.set(qn("w:type"), "dxa")
+
+
+def _clean_doc_text(value: str | None) -> str:
+    value = (value or "").replace("\ufffe", "-").replace("\u00ad", "")
+    value = value.replace("#default#", "")
+    value = re.sub(r"\s+", " ", value).strip(" .;:-—\t\n\r")
+    return value
 
 
 def _safe_filename(value: str) -> str:

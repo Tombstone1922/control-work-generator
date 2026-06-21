@@ -5,6 +5,7 @@ from collections import Counter
 
 from app.schemas import AssessmentItemRead
 from app.services.assessment_item_smart_builder import build_smart_task, normalize_topic, should_rebuild_text
+from app.services.contextual_task_builder import build_contextual_task, is_too_similar
 
 FORBIDDEN_PHRASES = (
     "перечень компетенций",
@@ -26,13 +27,20 @@ FORBIDDEN_PHRASES = (
 SECTION_HEADING_RE = re.compile(r"^(?:\d+(?:\.\d+)*\s+)?(?:перечень|методические|оценочные|критерии|таблица)\b", re.IGNORECASE)
 
 
-def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[AssessmentItemRead], list[str]]:
+def postprocess_generated_items(
+    items: list[AssessmentItemRead],
+    *,
+    discipline_name: str = "",
+    all_topics: list[str] | None = None,
+) -> tuple[list[AssessmentItemRead], list[str]]:
     cleaned: list[AssessmentItemRead] = []
     warnings: list[str] = []
-    seen: set[tuple[str, str]] = set()
+    seen_exact: set[str] = set()
+    used_texts: list[str] = []
     removed_bad = 0
     removed_duplicates = 0
     rebuilt_generic = 0
+    rebuilt_similar = 0
 
     for index, item in enumerate(items):
         text = clean_text(item.text)
@@ -47,7 +55,8 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
             removed_bad += 1
             continue
 
-        if should_rebuild_text(text, answer):
+        needs_rebuild = should_rebuild_text(text, answer)
+        if needs_rebuild:
             task = build_smart_task(
                 topic=topic,
                 assessment_type=item.assessment_type,
@@ -63,12 +72,31 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
             source_context = f"Smart FOS task builder rebuilt generic item; topic_family={task.topic_family}; topic=«{task.topic}»"
             rebuilt_generic += 1
 
-        normalized_key = normalize_for_key(text)
-        key = (item.section_code, normalized_key)
-        if key in seen:
+        if is_too_similar(text, used_texts, threshold=0.82):
+            task = build_contextual_task(
+                discipline_name=discipline_name,
+                topic=topic,
+                all_topics=all_topics or [],
+                assessment_type=item.assessment_type,
+                item_type=item.item_type,
+                index=index + 37,
+                difficulty=item.difficulty,
+                used_texts=used_texts,
+            )
+            topic = task.topic
+            text = task.text
+            answer = task.answer
+            criteria = task.criteria
+            source_kind = "knowledge_context"
+            source_context = f"Knowledge-aware FOS builder rebuilt similar item; topic_family={task.topic_family}; topic=«{task.topic}»"
+            rebuilt_similar += 1
+
+        exact_key = normalize_for_key(text)
+        if exact_key in seen_exact or is_too_similar(text, used_texts, threshold=0.90):
             removed_duplicates += 1
             continue
-        seen.add(key)
+        seen_exact.add(exact_key)
+        used_texts.append(text)
 
         cleaned.append(item.model_copy(update={
             "text": text,
@@ -83,8 +111,10 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
         warnings.append(f"Очистка банка заданий удалила мусорные OM-фрагменты: {removed_bad}.")
     if rebuilt_generic:
         warnings.append(f"Умный конструктор перестроил слишком общие задания: {rebuilt_generic}.")
+    if rebuilt_similar:
+        warnings.append(f"Контекстная база знаний перестроила похожие задания: {rebuilt_similar}.")
     if removed_duplicates:
-        warnings.append(f"Очистка банка заданий удалила дубли заданий: {removed_duplicates}.")
+        warnings.append(f"Антидубль удалил задания, которые остались слишком похожими: {removed_duplicates}.")
     return cleaned, warnings
 
 

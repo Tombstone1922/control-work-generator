@@ -26,6 +26,22 @@ SECTION_MARKERS = {
 STOP_HEADINGS = (
     "2.2", "2.3", "3.", "таблица 1", "критерии", "оценивание результатов", "правильный ответ", "итоговая диагностическая работа",
 )
+BAD_EXAMPLE_PHRASES = (
+    "перечень компетенций",
+    "уровни их сформированности",
+    "в процессе освоения образовательной программы",
+    "критерии определения сформированности",
+    "индекс компетенции",
+    "содержание компетенции",
+    "код и наименование индикатора",
+    "виды занятий для формирования",
+    "оценочные средства для оценки",
+    "методические, оценочные материалы",
+    "процедуры оценивания сформированности",
+    "оценочные средства для текущего контроля",
+    "вопросы для устного опроса",
+    "#default#",
+)
 TOPIC_RE = re.compile(r"^Тема\s*\d+\.?\s*(.+)$", re.IGNORECASE)
 NUMBERED_RE = re.compile(r"^\d+[\.)]\s+(.{8,})$")
 COMPETENCY_RE = re.compile(r"\b(?:УК|ОПК|ПК|ППК|ПКО|ПКС|ОК)-?[А-ЯA-Z]?\d+(?:\.\d+)?\b", re.IGNORECASE)
@@ -169,6 +185,7 @@ def _examples_from_section(lines: list[str], discipline: str, competencies: list
     competency = competencies[0] if competencies else ""
     item_type = _item_type(assessment_type)
     difficulty = "medium"
+    seen: set[str] = set()
 
     for line in lines:
         topic_match = TOPIC_RE.match(line)
@@ -179,8 +196,12 @@ def _examples_from_section(lines: list[str], discipline: str, competencies: list
         if not question_match:
             continue
         text = _clean_text(question_match.group(1))
+        key = _normalize_key(text)
+        if key in seen:
+            continue
         if not _is_usable_question(text):
             continue
+        seen.add(key)
         result.append(_record(discipline, topic, competency, assessment_type, item_type, difficulty, text, filename))
     return result[:300]
 
@@ -244,16 +265,26 @@ def _default_answer(topic: str, item_type: str) -> str:
 
 
 def _clean_text(value: str) -> str:
+    value = (value or "").replace("\ufffe", "-").replace("\u00ad", "")
+    value = value.replace("#default#", "")
     value = re.sub(r"\s+", " ", value).strip(" .;:-—\t")
     return value
 
 
 def _is_usable_question(value: str) -> bool:
     lower = value.lower()
-    if len(value) < 12 or len(value) > 1200:
+    if len(value) < 12 or len(value) > 800:
         return False
     if lower in {"знать", "уметь", "владеть"}:
+        return False
+    if any(phrase in lower for phrase in BAD_EXAMPLE_PHRASES):
         return False
     if any(marker in lower for marker in ("таблица", "страница", "критерии", "оценка", "шкала оценки")):
         return False
     return True
+
+
+def _normalize_key(value: str) -> str:
+    value = value.lower().replace("ё", "е")
+    value = re.sub(r"[^a-zа-я0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()

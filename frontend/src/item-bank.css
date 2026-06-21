@@ -52,7 +52,7 @@
 .trainingDatasetPanel,
 .learningModePanel,
 .generationSummary,
-.localLlmPanel {
+.contextModulePanel {
   margin: 16px 0;
   padding: 16px;
   border: 1px solid #dbe4f5;
@@ -60,58 +60,102 @@
   background: #f9fbff;
 }
 
-.trainingDatasetPanel,
-.localLlmPanel {
+.trainingDatasetPanel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
 }
 
-.localLlmPanel {
+.contextModulePanel {
   position: relative;
   overflow: hidden;
+  display: grid;
+  gap: 14px;
+  background: linear-gradient(135deg, #f7fbff, #f3f7ff);
 }
 
-.localLlmPanel::before {
+.contextModulePanel::before,
+.contextTopicPanel::before {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
   width: 5px;
-  background: #94a3b8;
+  background: #4867a8;
 }
 
-.localLlmPanel h3 {
+.contextModulePanel h3,
+.contextTopicPanel h3 {
   margin: 4px 0 5px;
 }
 
-.localLlmPanel small {
-  display: block;
-  margin-top: 5px;
-  color: #66728a;
+.contextModuleStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.llmReady {
-  border-color: #b7efd1;
-  background: linear-gradient(135deg, #f2fff8, #f8fbff);
+.contextModuleStats span {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #eef3ff;
+  color: #52617b;
+  font-size: 13px;
 }
 
-.llmReady::before {
-  background: #18a058;
+.contextTopicPanel {
+  position: relative;
+  overflow: hidden;
+  margin: 12px 0 16px;
+  padding: 14px 14px 14px 18px;
+  border: 1px solid #d8e3fb;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fbfdff, #f6f9ff);
 }
 
-.llmWarning {
-  border-color: #f3d49a;
-  background: linear-gradient(135deg, #fff9ed, #f9fbff);
+.contextTopicHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-.llmWarning::before {
-  background: #d98d00;
+.chipList,
+.compactList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
 }
 
-.llmDisabled {
-  border-color: #dbe4f5;
-  background: #f9fbff;
+.chipList strong,
+.compactList strong {
+  color: #31436b;
+  font-size: 13px;
+}
+
+.chipList div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.chipList span {
+  padding: 6px 8px;
+  border: 1px solid #cbd8f2;
+  border-radius: 999px;
+  background: #fff;
+  color: #42516d;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.compactList ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #52617b;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .learningModeGrid {
@@ -410,10 +454,14 @@
   .itemBankGrid,
   .itemBankEditor .miniGrid,
   .trainingDatasetPanel,
-  .localLlmPanel,
   .itemBankHero,
-  .learningModeGrid {
+  .learningModeGrid,
+  .contextTopicHeader {
     grid-template-columns: 1fr;
+  }
+
+  .contextTopicHeader {
+    display: grid;
   }
 
   .sourceMiniStats {

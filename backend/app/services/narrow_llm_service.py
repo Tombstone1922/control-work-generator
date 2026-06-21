@@ -1,14 +1,20 @@
+import json
+import os
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from app.schemas import AssessmentItemRead, TrainingExampleRead
 from app.services.example_based_generator import apply_example_based_generation
 
-MODEL_VERSION = "narrow-fos-generator-v0.2"
+MODEL_VERSION = "narrow-fos-generator-v0.3"
+DEFAULT_OM_CORPUS_PATH = Path(__file__).resolve().parents[1] / "storage" / "om_corpus" / "om_examples.jsonl"
+OM_CORPUS_PATH = Path(os.getenv("OM_CORPUS_PATH", str(DEFAULT_OM_CORPUS_PATH)))
 SOURCE_WEIGHTS = {
+    "om_reference": 1.60,
     "om_direct": 1.45,
-    "expert_feedback": 1.20,
-    "om_similar": 0.90,
+    "expert_feedback": 1.25,
+    "om_similar": 0.95,
 }
 
 
@@ -24,8 +30,29 @@ class NarrowGenerationResult:
     warnings: list[str]
 
 
+@dataclass
+class OMReferenceExample:
+    id: str
+    discipline_name: str
+    topic: str
+    competency_code: str
+    indicator: str
+    assessment_type: str
+    item_type: str
+    difficulty: str
+    text: str
+    answer: str
+    criteria: list[str]
+    quality_label: str = "good"
+    teacher_comment: str = ""
+    source: str = "om_reference"
+    created_at: str = ""
+
+
 def apply_narrow_llm_generation(*, items, training_examples, requested_mode, narrow_max_items, fallback_to_template):
-    good = [x for x in training_examples if x.quality_label == "good"]
+    expert_good = [x for x in training_examples if x.quality_label == "good"]
+    om_examples = _load_om_reference_examples()
+    good = expert_good + om_examples
     if not good:
         if not fallback_to_template:
             raise ValueError("No expert-approved or OM examples for narrow generator.")
@@ -40,11 +67,50 @@ def apply_narrow_llm_generation(*, items, training_examples, requested_mode, nar
             continue
         example = max(good, key=lambda x: _score(item, x))
         result.append(_adapt(item, example))
+
     warnings = []
-    om_count = sum(1 for example in good if example.source.startswith("om_"))
-    if om_count:
-        warnings.append(f"Narrow-модель использовала OM-примеры как главный источник: {om_count} шт.")
+    if om_examples:
+        warnings.append(f"Подключен корпус готовых оценочных материалов: {len(om_examples)} OM-примеров.")
+    if expert_good:
+        warnings.append(f"Подключены экспертные примеры преподавателя: {len(expert_good)} шт.")
     return NarrowGenerationResult(result, requested_mode, "narrow_llm" if limit == len(items) else "hybrid", 0, limit, len(items) - limit, MODEL_VERSION, warnings)
+
+
+def _load_om_reference_examples() -> list[OMReferenceExample]:
+    if not OM_CORPUS_PATH.exists():
+        return []
+    examples: list[OMReferenceExample] = []
+    try:
+        with OM_CORPUS_PATH.open("r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                input_data = record.get("input", {}) or {}
+                output_data = record.get("output", {}) or {}
+                text = str(output_data.get("text") or "").strip()
+                if not text:
+                    continue
+                examples.append(
+                    OMReferenceExample(
+                        id=str(record.get("id") or f"om-{len(examples) + 1}"),
+                        discipline_name=str(input_data.get("discipline_name") or ""),
+                        topic=str(input_data.get("topic") or ""),
+                        competency_code=str(input_data.get("competency_code") or ""),
+                        indicator=str(input_data.get("indicator") or ""),
+                        assessment_type=str(input_data.get("assessment_type") or "oral"),
+                        item_type=str(input_data.get("item_type") or "theoretical_open"),
+                        difficulty=str(input_data.get("difficulty") or "medium"),
+                        text=text,
+                        answer=str(output_data.get("answer") or ""),
+                        criteria=[str(item).strip() for item in output_data.get("criteria", []) if str(item).strip()],
+                        source=str(record.get("source") or "om_reference"),
+                    )
+                )
+    except (OSError, json.JSONDecodeError):
+        return []
+    return examples[:5000]
 
 
 def _score(item, example):
@@ -60,15 +126,24 @@ def _score(item, example):
 
 
 def _adapt(item, example):
-    topic = item.topic or "topic"
-    text = example.text.replace(example.topic, topic) if example.topic else example.text
-    answer = example.answer.replace(example.topic, topic) if example.topic else example.answer
-    source_kind = "om_reference" if example.source.startswith("om_") else "narrow_llm"
-    source_label = "OM" if example.source.startswith("om_") else "expert example"
+    topic = item.topic or "теме дисциплины"
+    text = _adapt_text(example.text, example.topic, topic) or item.text
+    answer = _adapt_text(example.answer, example.topic, topic) or item.answer
+    source_kind = "om_reference" if example.source.startswith("om") else "narrow_llm"
+    source_label = "готовый OM-корпус" if example.source.startswith("om") else "expert example"
     return item.model_copy(update={
-        "text": text or item.text,
-        "answer": answer or item.answer,
+        "text": text,
+        "answer": answer,
         "criteria": (example.criteria or item.criteria)[:6],
-        "source_context": f"Narrow FOS generator {MODEL_VERSION}; {source_label} {example.id}.",
+        "source_context": f"Narrow FOS generator {MODEL_VERSION}; {source_label}: {example.id}.",
         "source_kind": source_kind,
     })
+
+
+def _adapt_text(text: str, source_topic: str, target_topic: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if source_topic and source_topic.lower() in text.lower():
+        return text.replace(source_topic, target_topic)
+    return text

@@ -28,6 +28,7 @@ from app.services.assessment_item_generator import ItemGenerationContext, genera
 from app.services.assessment_item_postprocessor import postprocess_generated_items
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.example_based_generator import apply_example_based_generation
+from app.services.local_llm_task_refiner import refine_items_with_local_llm
 from app.services.narrow_llm_service import apply_narrow_llm_generation
 from app.services.reference_library import find_om_examples_for_program, get_reference_library_path
 
@@ -131,10 +132,24 @@ def generate_items(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    cleaned_items, cleanup_warnings = postprocess_generated_items(generation_result.items, discipline_name=fund.discipline_name, all_topics=topics)
+    preclean_items, preclean_warnings = postprocess_generated_items(
+        generation_result.items,
+        discipline_name=fund.discipline_name,
+        all_topics=topics,
+    )
+    llm_items, llm_warnings = refine_items_with_local_llm(
+        items=preclean_items,
+        discipline_name=fund.discipline_name,
+        all_topics=topics,
+    )
+    cleaned_items, cleanup_warnings = postprocess_generated_items(
+        llm_items,
+        discipline_name=fund.discipline_name,
+        all_topics=topics,
+    )
     generation_result.items = cleaned_items
 
-    warnings = list(om_match.warnings) + list(generation_result.warnings) + cleanup_warnings
+    warnings = list(om_match.warnings) + list(generation_result.warnings) + preclean_warnings + llm_warnings + cleanup_warnings
     if uploaded_om_examples:
         warnings.insert(0, f"База загруженных OM добавила эталонных заданий: {len(uploaded_om_examples)}.")
     if om_match.examples:

@@ -9,6 +9,7 @@ from app.routers import (
     auth,
     export,
     generation,
+    local_llm,
     narrow_generation,
     programs,
     reference_materials,
@@ -40,6 +41,7 @@ app.include_router(assessment_items.router)
 app.include_router(narrow_generation.router)
 app.include_router(reference_materials.router)
 app.include_router(training_examples.router)
+app.include_router(local_llm.router)
 app.include_router(export.router)
 
 

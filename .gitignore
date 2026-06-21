@@ -17,6 +17,13 @@ backend/app/storage/exports/*
 !backend/app/storage/exports/.gitkeep
 backend/app/storage/reference_library/*
 !backend/app/storage/reference_library/.gitkeep
+backend/storage/models/*
+!backend/storage/models/.gitkeep
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
 
 # Environment
 .env

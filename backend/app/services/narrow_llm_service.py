@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from app.ml.narrow_fos_model import NarrowFOSModel
 from app.schemas import AssessmentItemRead, TrainingExampleRead
 from app.services.example_based_generator import apply_example_based_generation
 
-MODEL_VERSION = "narrow-fos-generator-v0.3"
+MODEL_VERSION = "narrow-fos-generator-v0.4"
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[1] / "storage" / "models" / "narrow_fos_model.json"
 DEFAULT_OM_CORPUS_PATH = Path(__file__).resolve().parents[1] / "storage" / "om_corpus" / "om_examples.jsonl"
+NARROW_MODEL_PATH = Path(os.getenv("NARROW_LLM_MODEL_PATH", str(DEFAULT_MODEL_PATH)))
 OM_CORPUS_PATH = Path(os.getenv("OM_CORPUS_PATH", str(DEFAULT_OM_CORPUS_PATH)))
 SOURCE_WEIGHTS = {
     "om_reference": 1.60,
@@ -50,30 +53,60 @@ class OMReferenceExample:
 
 
 def apply_narrow_llm_generation(*, items, training_examples, requested_mode, narrow_max_items, fallback_to_template):
+    model = _load_trained_model()
     expert_good = [x for x in training_examples if x.quality_label == "good"]
-    om_examples = _load_om_reference_examples()
+    om_examples = _load_om_reference_examples() if model is None else []
     good = expert_good + om_examples
-    if not good:
+
+    if model is None and not good:
         if not fallback_to_template:
-            raise ValueError("No expert-approved or OM examples for narrow generator.")
+            raise ValueError("No trained model, expert-approved examples or OM examples for narrow generator.")
         fallback = apply_example_based_generation(items=items, training_examples=training_examples, requested_mode="template", learned_max_items=0, fallback_to_template=True)
-        return NarrowGenerationResult(fallback.items, requested_mode, "template", 0, 0, len(items), MODEL_VERSION, ["Нет OM/экспертных примеров; использованы шаблоны."])
+        return NarrowGenerationResult(fallback.items, requested_mode, "template", 0, 0, len(items), MODEL_VERSION, ["Нет обученной модели и OM/экспертных примеров; использованы шаблоны."])
 
     limit = len(items) if requested_mode == "narrow_llm" else min(narrow_max_items, len(items))
     result = []
+    trained_count = 0
     for index, item in enumerate(items):
         if index >= limit:
             result.append(item)
             continue
+        if model is not None:
+            prediction = model.predict(
+                discipline_name="",
+                topic=item.topic,
+                competency_code=item.competency_code,
+                indicator=item.indicator,
+                assessment_type=item.assessment_type,
+                item_type=item.item_type,
+                difficulty=item.difficulty,
+            )
+            if prediction is not None:
+                result.append(_adapt_from_prediction(item, prediction))
+                trained_count += 1
+                continue
         example = max(good, key=lambda x: _score(item, x))
         result.append(_adapt(item, example))
 
     warnings = []
+    model_version = MODEL_VERSION
+    if model is not None:
+        model_version = model.metadata.get("model_version", MODEL_VERSION)
+        warnings.append(f"Использована обученная локальная модель ФОС: {model_version}; примеров в модели: {model.metadata.get('examples_total', 0)}.")
     if om_examples:
         warnings.append(f"Подключен корпус готовых оценочных материалов: {len(om_examples)} OM-примеров.")
     if expert_good:
         warnings.append(f"Подключены экспертные примеры преподавателя: {len(expert_good)} шт.")
-    return NarrowGenerationResult(result, requested_mode, "narrow_llm" if limit == len(items) else "hybrid", 0, limit, len(items) - limit, MODEL_VERSION, warnings)
+    return NarrowGenerationResult(result, requested_mode, "narrow_llm" if limit == len(items) else "hybrid", 0, limit, len(items) - limit, model_version, warnings)
+
+
+def _load_trained_model() -> NarrowFOSModel | None:
+    if not NARROW_MODEL_PATH.exists():
+        return None
+    try:
+        return NarrowFOSModel.load(NARROW_MODEL_PATH)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return None
 
 
 def _load_om_reference_examples() -> list[OMReferenceExample]:
@@ -111,6 +144,17 @@ def _load_om_reference_examples() -> list[OMReferenceExample]:
     except (OSError, json.JSONDecodeError):
         return []
     return examples[:5000]
+
+
+def _adapt_from_prediction(item: AssessmentItemRead, prediction) -> AssessmentItemRead:
+    example = prediction.example
+    return item.model_copy(update={
+        "text": prediction.generated_text or item.text,
+        "answer": prediction.generated_answer or item.answer,
+        "criteria": (prediction.generated_criteria or item.criteria)[:6],
+        "source_context": f"Trained narrow FOS model; example {example.id}; score={prediction.score:.3f}; source={example.source}.",
+        "source_kind": "trained_narrow_llm",
+    })
 
 
 def _score(item, example):

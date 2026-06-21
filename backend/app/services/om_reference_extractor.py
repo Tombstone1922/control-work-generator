@@ -36,6 +36,7 @@ class OMExtractionStats:
     files_total: int = 0
     files_processed: int = 0
     examples_total: int = 0
+    zip_archives_extracted: int = 0
     errors: list[str] | None = None
 
 
@@ -49,12 +50,39 @@ def build_om_reference_corpus(input_path: str | Path, output_path: str | Path) -
         if input_path.is_file() and input_path.suffix.lower() == ".zip":
             with TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
-                with zipfile.ZipFile(input_path) as archive:
-                    archive.extractall(temp_path)
+                _extract_zip_recursive(input_path, temp_path, stats)
                 _write_examples_from_folder(temp_path, output, stats)
         else:
+            _extract_nested_zips(input_path, stats)
             _write_examples_from_folder(input_path, output, stats)
     return stats
+
+
+def _extract_zip_recursive(zip_path: Path, destination: Path, stats: OMExtractionStats) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as archive:
+        archive.extractall(destination)
+    stats.zip_archives_extracted += 1
+    _extract_nested_zips(destination, stats)
+
+
+def _extract_nested_zips(root: Path, stats: OMExtractionStats) -> None:
+    if not root.exists():
+        return
+    processed: set[Path] = set()
+    while True:
+        nested = [path for path in root.rglob("*.zip") if path.is_file() and path not in processed]
+        if not nested:
+            break
+        for zip_path in nested:
+            processed.add(zip_path)
+            target = zip_path.with_suffix("")
+            try:
+                with zipfile.ZipFile(zip_path) as archive:
+                    archive.extractall(target)
+                stats.zip_archives_extracted += 1
+            except Exception as exc:
+                stats.errors.append(f"{zip_path.name}: nested zip extraction error: {exc}")
 
 
 def _write_examples_from_folder(root: Path, output, stats: OMExtractionStats) -> None:

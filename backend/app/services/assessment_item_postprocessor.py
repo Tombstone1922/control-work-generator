@@ -40,6 +40,8 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
         topic = clean_topic(item.topic)
         criteria = [clean_text(value) for value in (item.criteria or [])]
         criteria = [value for value in criteria if value and not is_bad_text(value)]
+        source_kind = item.source_kind
+        source_context = item.source_context
 
         if is_bad_text(text) or len(text) < 8:
             removed_bad += 1
@@ -57,6 +59,8 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
             text = task.text
             answer = task.answer
             criteria = task.criteria
+            source_kind = "smart_builder"
+            source_context = f"Smart FOS task builder rebuilt generic item; topic_family={task.topic_family}; topic=«{task.topic}»"
             rebuilt_generic += 1
 
         normalized_key = normalize_for_key(text)
@@ -71,6 +75,8 @@ def postprocess_generated_items(items: list[AssessmentItemRead]) -> tuple[list[A
             "answer": answer,
             "topic": topic,
             "criteria": criteria[:6],
+            "source_kind": source_kind,
+            "source_context": source_context,
         }))
 
     if removed_bad:

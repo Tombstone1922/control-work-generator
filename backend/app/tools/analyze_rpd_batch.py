@@ -2,7 +2,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from app.services.document_parser import extract_text_from_file
+from app.services.document_parser import extract_text
 from app.services.rpd_analyzer import analyze_rpd_text
 
 SUPPORTED_EXTENSIONS = {".docx", ".pdf", ".txt"}
@@ -18,7 +18,7 @@ def analyze_folder(input_dir: Path, output_csv: Path) -> None:
     rows = []
     for path in iter_files(input_dir):
         try:
-            text = extract_text_from_file(path)
+            text = extract_text(path)
             result = analyze_rpd_text(text)
             rows.append({
                 "file": str(path),

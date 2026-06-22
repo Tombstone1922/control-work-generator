@@ -51,6 +51,49 @@ BAD_MARKERS = (
     "контактная работа",
     "консультации",
     "общая трудоемкость",
+    "перечень оценочных средств",
+    "рекомендуемых к использованию",
+    "формировании оценочных материалов",
+)
+
+QUESTION_STARTERS = (
+    "что такое",
+    "что такое?",
+    "какие методы",
+    "какие преимущества",
+    "как определить",
+    "как вы думаете",
+    "перечислите",
+    "расскажите",
+    "объясните",
+    "опишите",
+    "назовите",
+    "приведите",
+    "почему",
+    "зачем",
+    "чем отличается",
+    "в чем разница",
+    "в чём разница",
+    "для чего",
+    "что произойдет",
+    "что произойдёт",
+)
+
+QUESTION_MARKERS = (
+    "?",
+    "перечислите ",
+    "расскажите ",
+    "объясните ",
+    "опишите ",
+    "назовите ",
+    "приведите пример",
+    "в чем разница",
+    "в чём разница",
+    "чем отличается",
+    "какие ",
+    "как ",
+    "зачем ",
+    "почему ",
 )
 
 DEFINITION_CUT_MARKERS = (
@@ -99,6 +142,7 @@ def sanitize_rpd_topic(value: str) -> str:
 
     value = re.sub(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[.)]?\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"^\d+(?:\.\d+)*[.)]?\s*", "", value)
+    value = re.sub(r"^Б1\.\S+\s*[-–—]?\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+\d+(?:\s+\d+){1,10}$", "", value)
     value = re.sub(r"\s+\|\s*\d+\s*(?:\|\s*\d+\s*)+$", "", value)
 
@@ -125,6 +169,8 @@ def is_valid_rpd_topic(value: str) -> bool:
         return False
     if any(marker in lower for marker in BAD_MARKERS):
         return False
+    if _looks_like_assessment_question(lower):
+        return False
     if re.fullmatch(r"[\d\s.,;/|\\\-–—]+", value):
         return False
     if len(value) < 8 or len(value) > 170:
@@ -139,6 +185,18 @@ def is_valid_rpd_topic(value: str) -> bool:
     if lower.endswith(("типа", "форме", "подготовки", "достижения", "индикатора")):
         return False
     return True
+
+
+def _looks_like_assessment_question(lower: str) -> bool:
+    lower = lower.strip()
+    if any(lower.startswith(starter) for starter in QUESTION_STARTERS):
+        return True
+    if "?" in lower:
+        return True
+    if any(marker in f" {lower} " for marker in QUESTION_MARKERS):
+        # Названия тем редко являются прямыми вопросами или императивами. Для РПД такие строки считаем заданиями, а не темами.
+        return True
+    return False
 
 
 def _clean(value: str) -> str:

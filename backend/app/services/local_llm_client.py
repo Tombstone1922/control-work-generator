@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -38,6 +40,7 @@ def get_local_llm_settings() -> LocalLLMSettings:
 class LocalLLMClient:
     def __init__(self, settings: LocalLLMSettings | None = None):
         self.settings = settings or get_local_llm_settings()
+        self.last_raw_content = ""
 
     def is_enabled(self) -> bool:
         return self.settings.enabled
@@ -48,13 +51,30 @@ class LocalLLMClient:
         payload = {
             "model": self.settings.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "system", "content": _no_think(system_prompt)},
+                {"role": "user", "content": _no_think(user_prompt)},
             ],
             "temperature": self.settings.temperature,
             "max_tokens": self.settings.max_tokens,
             "response_format": {"type": "json_object"},
         }
+        raw = self._post_chat(payload)
+        if raw is None:
+            payload.pop("response_format", None)
+            raw = self._post_chat(payload)
+        if raw is None:
+            return None
+
+        try:
+            response_data = json.loads(raw)
+            content = response_data["choices"][0]["message"]["content"]
+            self.last_raw_content = str(content or "")
+            return _parse_json_object(self.last_raw_content)
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+            self.last_raw_content = raw[:2000]
+            return None
+
+    def _post_chat(self, payload: dict[str, Any]) -> str | None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             f"{self.settings.base_url}/chat/completions",
@@ -64,37 +84,48 @@ class LocalLLMClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.settings.timeout_seconds) as response:
-                raw = response.read().decode("utf-8")
-        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+                return response.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError, OSError):
             return None
 
-        try:
-            response_data = json.loads(raw)
-            content = response_data["choices"][0]["message"]["content"]
-            return _parse_json_object(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-            return None
+
+def _no_think(prompt: str) -> str:
+    prompt = (prompt or "").strip()
+    return f"/no_think\n{prompt}"
 
 
 def _parse_json_object(value: str) -> dict[str, Any] | None:
-    value = (value or "").strip()
+    value = _strip_thinking(value or "").strip()
     if not value:
         return None
     if value.startswith("```"):
         value = value.strip("`")
         value = value.replace("json\n", "", 1).strip()
-    try:
-        data = json.loads(value)
-    except json.JSONDecodeError:
-        start = value.find("{")
-        end = value.rfind("}")
-        if start < 0 or end <= start:
-            return None
+    candidates = [value]
+    start = value.find("{")
+    end = value.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(value[start : end + 1])
+
+    for candidate in candidates:
+        candidate = candidate.strip()
         try:
-            data = json.loads(value[start : end + 1])
+            data = json.loads(candidate)
+            return data if isinstance(data, dict) else None
         except json.JSONDecodeError:
-            return None
-    return data if isinstance(data, dict) else None
+            pass
+        try:
+            data = ast.literal_eval(candidate)
+            return data if isinstance(data, dict) else None
+        except (SyntaxError, ValueError):
+            pass
+    return None
+
+
+def _strip_thinking(value: str) -> str:
+    value = re.sub(r"<think>.*?</think>", "", value, flags=re.DOTALL | re.IGNORECASE)
+    value = re.sub(r"^.*?</think>", "", value, flags=re.DOTALL | re.IGNORECASE)
+    return value.strip()
 
 
 def _env_bool(name: str, default: bool) -> bool:

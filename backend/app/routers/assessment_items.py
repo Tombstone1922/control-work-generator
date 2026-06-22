@@ -1,4 +1,5 @@
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -55,10 +56,23 @@ def generate_items(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemsGenerateResponse:
+    total_started = time.perf_counter()
+    profiling: dict = {
+        "stages_ms": {},
+        "sections_total": 0,
+        "topics_total": 0,
+        "items_before_llm": 0,
+        "items_after_llm": 0,
+        "items_persisted": 0,
+    }
+
+    stage_started = time.perf_counter()
     fund = get_fund_entity_for_user(db, fund_id, current_user)
     if fund is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    profiling["stages_ms"]["load_fund"] = _elapsed_ms(stage_started)
 
+    stage_started = time.perf_counter()
     raw_sections = json.loads(fund.sections_json or "[]")
     selected_sections: list[AssessmentFundSection] = []
     for raw in raw_sections:
@@ -81,7 +95,12 @@ def generate_items(
         for item in fund.competencies
     ]
     topics = json.loads(fund.program.topics_json or "[]")
+    profiling["sections_total"] = len(selected_sections)
+    profiling["topics_total"] = len(topics)
+    profiling["competencies_total"] = len(competencies)
+    profiling["stages_ms"]["prepare_context"] = _elapsed_ms(stage_started)
 
+    stage_started = time.perf_counter()
     generated: list[AssessmentItemRead] = []
     target_codes: list[str] = []
     used_texts: list[str] = []
@@ -99,7 +118,10 @@ def generate_items(
             )
         )
         generated.extend(section_items)
+    profiling["items_before_llm"] = len(generated)
+    profiling["stages_ms"]["context_generator"] = _elapsed_ms(stage_started)
 
+    stage_started = time.perf_counter()
     expert_examples = [training_example_to_weighted(item) for item in list_training_examples_for_user(db, current_user)]
     uploaded_om_examples = list_om_generation_examples_for_fund(db, current_user, fund)
     om_match = find_om_examples_for_program(
@@ -110,7 +132,15 @@ def generate_items(
         topics=topics,
     )
     generation_examples = uploaded_om_examples + om_match.examples + expert_examples
+    profiling["examples"] = {
+        "expert": len(expert_examples),
+        "uploaded_om": len(uploaded_om_examples),
+        "folder_om": len(om_match.examples),
+        "total": len(generation_examples),
+    }
+    profiling["stages_ms"]["load_examples"] = _elapsed_ms(stage_started)
 
+    stage_started = time.perf_counter()
     mode = payload.generation_mode.strip().lower()
     try:
         if mode in {"narrow_llm", "hybrid"}:
@@ -131,23 +161,34 @@ def generate_items(
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    profiling["stages_ms"]["narrow_or_example_generation"] = _elapsed_ms(stage_started)
 
+    stage_started = time.perf_counter()
     preclean_items, preclean_warnings = postprocess_generated_items(
         generation_result.items,
         discipline_name=fund.discipline_name,
         all_topics=topics,
     )
-    llm_items, llm_warnings = refine_items_with_local_llm(
+    profiling["stages_ms"]["pre_postprocess"] = _elapsed_ms(stage_started)
+
+    stage_started = time.perf_counter()
+    llm_items, llm_warnings, llm_profile = refine_items_with_local_llm(
         items=preclean_items,
         discipline_name=fund.discipline_name,
         all_topics=topics,
     )
+    profiling["local_llm"] = llm_profile
+    profiling["stages_ms"]["local_llm_refinement"] = _elapsed_ms(stage_started)
+    profiling["items_after_llm"] = len(llm_items)
+
+    stage_started = time.perf_counter()
     cleaned_items, cleanup_warnings = postprocess_generated_items(
         llm_items,
         discipline_name=fund.discipline_name,
         all_topics=topics,
     )
     generation_result.items = cleaned_items
+    profiling["stages_ms"]["final_postprocess"] = _elapsed_ms(stage_started)
 
     warnings = list(om_match.warnings) + list(generation_result.warnings) + preclean_warnings + llm_warnings + cleanup_warnings
     if uploaded_om_examples:
@@ -155,6 +196,7 @@ def generate_items(
     if om_match.examples:
         warnings.append(f"Папочная база OM добавила примеров: {len(om_match.examples)}. Папка: {get_reference_library_path()}")
 
+    stage_started = time.perf_counter()
     persisted = replace_items_for_sections(
         db,
         fund,
@@ -162,6 +204,10 @@ def generate_items(
         generation_result.items,
         payload.replace_existing,
     )
+    profiling["stages_ms"]["persist_items"] = _elapsed_ms(stage_started)
+    profiling["items_persisted"] = len(persisted)
+    profiling["total_ms"] = _elapsed_ms(total_started)
+
     return AssessmentItemsGenerateResponse(
         items=persisted,
         requested_mode=generation_result.requested_mode,
@@ -171,6 +217,7 @@ def generate_items(
         template_generated_items=generation_result.template_generated_items,
         model_version=getattr(generation_result, "model_version", ""),
         warnings=warnings,
+        profiling=profiling,
     )
 
 
@@ -218,3 +265,7 @@ def delete_item(
     if not deleted:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
     return Response(status_code=204)
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)

@@ -12,17 +12,21 @@ from app.services.local_llm_client import LocalLLMClient, get_local_llm_settings
 
 SYSTEM_PROMPT = """
 Ты вузовский преподаватель, методист и разработчик фонда оценочных средств.
-Твоя задача — улучшить ОДНО оценочное задание по дисциплине.
-Используй только переданный контекст, не выдумывай лишние темы.
-Сделай задание предметным, проверяемым и отличающимся от уже созданных заданий.
-Не повторяй формулировки из списка запретов.
-Верни строго JSON без markdown и без пояснений.
-JSON-схема:
+Ты улучшаешь пакет оценочных заданий по дисциплине.
+Используй только переданный контекст и не выдумывай темы вне дисциплины.
+Каждое задание должно быть предметным, проверяемым и отличаться от остальных.
+Не оставляй шаблонные формулировки. Не пиши markdown. Не пиши рассуждения.
+Верни строго JSON-объект:
 {
-  "text": "формулировка задания",
-  "answer": "краткий эталонный ответ или структура эталонного решения",
-  "criteria": ["критерий 1", "критерий 2", "критерий 3"],
-  "uniqueness_reason": "чем это задание отличается"
+  "items": [
+    {
+      "index": 0,
+      "text": "формулировка задания",
+      "answer": "краткий эталонный ответ или структура эталонного решения",
+      "criteria": ["критерий 1", "критерий 2", "критерий 3"],
+      "uniqueness_reason": "чем это задание отличается"
+    }
+  ]
 }
 """.strip()
 
@@ -38,102 +42,170 @@ def refine_items_with_local_llm(
         return items, []
 
     client = LocalLLMClient(settings)
-    max_items = int(os.getenv("LOCAL_LLM_MAX_ITEMS", "24"))
+    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 60, minimum=1, maximum=max(len(items), 1))
+    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 6, minimum=1, maximum=10)
+    force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
+
     refined: list[AssessmentItemRead] = []
     warnings: list[str] = []
     used_texts: list[str] = []
     refined_count = 0
     failed_count = 0
     skipped_similar = 0
+    batches_count = 0
 
-    for index, item in enumerate(items):
-        if index >= max_items:
-            refined.append(item)
-            used_texts.append(item.text)
-            continue
+    target_items = items[:max_items]
+    tail_items = items[max_items:]
 
-        context = get_topic_knowledge_context(
+    for batch_start in range(0, len(target_items), batch_size):
+        batch = target_items[batch_start : batch_start + batch_size]
+        prompt = _build_batch_prompt(
+            batch=batch,
+            batch_start=batch_start,
             discipline_name=discipline_name,
-            topic=normalize_topic(item.topic),
             all_topics=all_topics,
+            used_texts=used_texts[-18:],
         )
-        prompt = _build_prompt(item=item, discipline_name=discipline_name, context=context, used_texts=used_texts[-12:])
         data = client.chat_json(system_prompt=SYSTEM_PROMPT, user_prompt=prompt)
+        batches_count += 1
         if not data:
-            refined.append(item)
-            used_texts.append(item.text)
-            failed_count += 1
+            refined.extend(batch)
+            used_texts.extend(item.text for item in batch)
+            failed_count += len(batch)
             continue
 
-        candidate = _sanitize_llm_result(data)
-        if not candidate:
-            refined.append(item)
-            used_texts.append(item.text)
-            failed_count += 1
+        candidates = _sanitize_batch_result(data)
+        if not candidates:
+            refined.extend(batch)
+            used_texts.extend(item.text for item in batch)
+            failed_count += len(batch)
             continue
 
-        text = candidate["text"]
-        if _too_similar(text, used_texts, threshold=0.86):
-            refined.append(item)
-            used_texts.append(item.text)
-            skipped_similar += 1
-            continue
+        candidate_by_index = {candidate["index"]: candidate for candidate in candidates}
+        for local_index, item in enumerate(batch):
+            candidate = candidate_by_index.get(batch_start + local_index) or candidate_by_index.get(local_index)
+            if not candidate:
+                refined.append(item)
+                used_texts.append(item.text)
+                failed_count += 1
+                continue
 
-        updated = item.model_copy(update={
-            "text": text,
-            "answer": candidate["answer"],
-            "criteria": candidate["criteria"],
-            "source_kind": "local_llm_qwen3",
-            "source_context": (
-                f"Local LLM refiner; model={settings.model}; "
-                f"topic=«{normalize_topic(item.topic)}»; reason={candidate.get('uniqueness_reason', '')}"
-            ),
-        })
-        refined.append(updated)
-        used_texts.append(text)
-        refined_count += 1
+            text = candidate["text"]
+            if not force_rewrite and _too_similar(text, used_texts, threshold=0.88):
+                refined.append(item)
+                used_texts.append(item.text)
+                skipped_similar += 1
+                continue
+            if _too_similar(text, used_texts, threshold=0.96):
+                refined.append(item)
+                used_texts.append(item.text)
+                skipped_similar += 1
+                continue
+
+            updated = item.model_copy(update={
+                "text": text,
+                "answer": candidate["answer"],
+                "criteria": candidate["criteria"],
+                "source_kind": "local_llm_qwen3",
+                "source_context": (
+                    f"Local LLM batch refiner; model={settings.model}; "
+                    f"batch_size={batch_size}; topic=«{normalize_topic(item.topic)}»; "
+                    f"reason={candidate.get('uniqueness_reason', '')}"
+                ),
+            })
+            refined.append(updated)
+            used_texts.append(text)
+            refined_count += 1
+
+    refined.extend(tail_items)
 
     if refined_count:
-        warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; модель: {settings.model}.")
+        warnings.append(
+            f"Локальная LLM агрессивно улучшила формулировки заданий: {refined_count}; "
+            f"пакетов: {batches_count}; модель: {settings.model}."
+        )
     if failed_count:
-        warnings.append(f"Локальная LLM не ответила или вернула некорректный JSON для заданий: {failed_count}; оставлены базовые задания.")
+        warnings.append(
+            f"Локальная LLM не вернула корректный JSON для заданий: {failed_count}; "
+            "для них оставлены базовые задания."
+        )
     if skipped_similar:
         warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
     return refined, warnings
 
 
-def _build_prompt(*, item: AssessmentItemRead, discipline_name: str, context, used_texts: list[str]) -> str:
+def _build_batch_prompt(
+    *,
+    batch: list[AssessmentItemRead],
+    batch_start: int,
+    discipline_name: str,
+    all_topics: list[str],
+    used_texts: list[str],
+) -> str:
+    payload_items = []
+    for local_index, item in enumerate(batch):
+        context = get_topic_knowledge_context(
+            discipline_name=discipline_name,
+            topic=normalize_topic(item.topic),
+            all_topics=all_topics,
+        )
+        payload_items.append({
+            "index": batch_start + local_index,
+            "topic": normalize_topic(item.topic),
+            "assessment_type": item.assessment_type,
+            "item_type": item.item_type,
+            "difficulty": item.difficulty,
+            "competency_code": item.competency_code,
+            "indicator": _trim(item.indicator, 260),
+            "base_task": {
+                "text": _trim(item.text, 420),
+                "answer": _trim(item.answer, 260),
+                "criteria": item.criteria[:4],
+            },
+            "knowledge_context": {
+                "profile_name": context.profile_name,
+                "related_topics": context.related_topics[:4],
+                "learning_outcomes": [_trim(value, 180) for value in context.learning_outcomes[:3]],
+                "competencies": context.competencies[:4],
+                "key_terms": context.key_terms[:8],
+                "source": context.source,
+            },
+        })
+
     payload = {
         "discipline_name": discipline_name,
-        "topic": normalize_topic(item.topic),
-        "assessment_type": item.assessment_type,
-        "item_type": item.item_type,
-        "difficulty": item.difficulty,
-        "competency_code": item.competency_code,
-        "indicator": item.indicator,
-        "base_task": {
-            "text": item.text,
-            "answer": item.answer,
-            "criteria": item.criteria,
-        },
-        "knowledge_context": {
-            "profile_name": context.profile_name,
-            "related_topics": context.related_topics,
-            "learning_outcomes": context.learning_outcomes,
-            "competencies": context.competencies,
-            "key_terms": context.key_terms,
-            "source": context.source,
-        },
-        "already_created_tasks_do_not_repeat": used_texts,
+        "already_created_tasks_do_not_repeat": [_trim(value, 260) for value in used_texts],
+        "items": payload_items,
         "requirements": [
-            "Сделай задание конкретным для темы и дисциплины.",
-            "Добавь проверяемый результат: артефакт, расчёт, фрагмент кода, чек-лист, схема, SQL-запрос, тест-кейс или анализ кейса — в зависимости от темы.",
-            "Не используй общую формулировку вида 'раскройте тему' без предметного действия.",
-            "Ответ и критерии должны соответствовать заданию.",
+            "Перепиши каждое задание заметно сильнее базового варианта.",
+            "Не ограничивайся заменой слов: добавь конкретный проверяемый результат.",
+            "Для программных дисциплин используй артефакты: фрагмент кода, схема, SQL-запрос, тест-кейс, алгоритм, компонент, API-контракт, чек-лист.",
+            "Для каждого входного item верни один выходной item с тем же index.",
+            "Ответ должен быть кратким, но предметным.",
+            "Критерии должны проверять выполнение конкретного результата.",
             "Верни только JSON по схеме из system prompt.",
         ],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _sanitize_batch_result(data: dict) -> list[dict]:
+    raw_items = data.get("items")
+    if not isinstance(raw_items, list):
+        raw_items = [data]
+    result: list[dict] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        candidate = _sanitize_llm_result(raw)
+        if not candidate:
+            continue
+        try:
+            candidate["index"] = int(raw.get("index", len(result)))
+        except (TypeError, ValueError):
+            candidate["index"] = len(result)
+        result.append(candidate)
+    return result
 
 
 def _sanitize_llm_result(data: dict) -> dict | None:
@@ -145,9 +217,9 @@ def _sanitize_llm_result(data: dict) -> dict | None:
     criteria = [_clean_text(item) for item in criteria_raw if _clean_text(item)]
     uniqueness_reason = _clean_text(data.get("uniqueness_reason"))
 
-    if len(text) < 30 or len(text) > 1200:
+    if len(text) < 30 or len(text) > 1400:
         return None
-    if len(answer) < 20:
+    if len(answer) < 15:
         return None
     if len(criteria) < 2:
         return None
@@ -165,6 +237,11 @@ def _clean_text(value) -> str:
     value = str(value or "").replace("#default#", "")
     value = re.sub(r"\s+", " ", value).strip(" .;:-—\t\n\r")
     return value
+
+
+def _trim(value: str, limit: int) -> str:
+    value = _clean_text(value)
+    return value if len(value) <= limit else f"{value[:limit].rstrip()}…"
 
 
 def _too_similar(text: str, used_texts: list[str], threshold: float) -> bool:
@@ -189,3 +266,18 @@ def _norm(value: str) -> str:
     value = (value or "").lower().replace("ё", "е")
     value = re.sub(r"[^a-zа-я0-9]+", " ", value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on", "да"}
+
+
+def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(maximum, value))

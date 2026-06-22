@@ -51,6 +51,43 @@ backend\.env
 
 и пропишет настройки локальной LLM.
 
+Актуальный режим по умолчанию — агрессивная пакетная доработка Qwen:
+
+```env
+LOCAL_LLM_ENABLED=true
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8081/v1
+LOCAL_LLM_MODEL=qwen3-14b-instruct-q4_k_m
+LOCAL_LLM_TIMEOUT_SECONDS=180
+LOCAL_LLM_TEMPERATURE=0.2
+LOCAL_LLM_MAX_TOKENS=2200
+LOCAL_LLM_MAX_ITEMS=60
+LOCAL_LLM_BATCH_SIZE=6
+LOCAL_LLM_FORCE_REWRITE=true
+```
+
+Что это значит:
+
+- `LOCAL_LLM_MAX_ITEMS=60` — Qwen может переписать до 60 заданий за генерацию.
+- `LOCAL_LLM_BATCH_SIZE=6` — за один запрос Qwen получает сразу 6 заданий, а не одно.
+- `LOCAL_LLM_FORCE_REWRITE=true` — Qwen активнее вмешивается и не оставляет базовую формулировку без необходимости.
+- `LOCAL_LLM_MAX_TOKENS=2200` — повышенный лимит ответа, чтобы модель могла вернуть JSON сразу по нескольким заданиям.
+
+Если нужно еще быстрее, можно временно поставить:
+
+```env
+LOCAL_LLM_MAX_ITEMS=36
+LOCAL_LLM_BATCH_SIZE=6
+LOCAL_LLM_MAX_TOKENS=1800
+```
+
+Если нужно максимальное качество, но дольше:
+
+```env
+LOCAL_LLM_MAX_ITEMS=80
+LOCAL_LLM_BATCH_SIZE=4
+LOCAL_LLM_MAX_TOKENS=2600
+```
+
 ### 3. Запустить Qwen
 
 В отдельном PowerShell:
@@ -106,6 +143,22 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\check_local_llm.ps1
   "model": "qwen3-14b-instruct-q4_k_m"
 }
 ```
+
+## Почему генерация стала быстрее
+
+Раньше локальная LLM могла делать запросы последовательно:
+
+```text
+1 задание = 1 запрос к Qwen
+```
+
+Теперь используется batch-refinement:
+
+```text
+6 заданий = 1 запрос к Qwen
+```
+
+Поэтому Qwen вмешивается чаще, но общее время должно снизиться, потому что количество сетевых/серверных обращений уменьшается.
 
 ## Ручной вариант
 
@@ -209,10 +262,12 @@ backend\.env
 LOCAL_LLM_ENABLED=true
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8081/v1
 LOCAL_LLM_MODEL=qwen3-14b-instruct-q4_k_m
-LOCAL_LLM_TIMEOUT_SECONDS=120
+LOCAL_LLM_TIMEOUT_SECONDS=180
 LOCAL_LLM_TEMPERATURE=0.2
-LOCAL_LLM_MAX_TOKENS=900
-LOCAL_LLM_MAX_ITEMS=24
+LOCAL_LLM_MAX_TOKENS=2200
+LOCAL_LLM_MAX_ITEMS=60
+LOCAL_LLM_BATCH_SIZE=6
+LOCAL_LLM_FORCE_REWRITE=true
 ```
 
 Важно: `LOCAL_LLM_MODEL` — это внутреннее имя для запроса. Сам файл модели может называться `Qwen3-14B-Q4_K_M.gguf`.
@@ -282,7 +337,7 @@ npm run dev
 После генерации в предупреждениях может появиться сообщение:
 
 ```text
-Локальная LLM улучшила формулировки заданий: ...; модель: qwen3-14b-instruct-q4_k_m.
+Локальная LLM агрессивно улучшила формулировки заданий: ...; пакетов: ...; модель: qwen3-14b-instruct-q4_k_m.
 ```
 
 Также у части заданий источник может быть:

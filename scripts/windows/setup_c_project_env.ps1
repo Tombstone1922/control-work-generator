@@ -36,10 +36,11 @@ $settings = @{
     "LOCAL_LLM_MODEL" = "qwen3-14b-instruct-q4_k_m"
     "LOCAL_LLM_TIMEOUT_SECONDS" = "180"
     "LOCAL_LLM_TEMPERATURE" = "0.2"
-    "LOCAL_LLM_MAX_TOKENS" = "2200"
-    "LOCAL_LLM_MAX_ITEMS" = "60"
+    "LOCAL_LLM_MAX_TOKENS" = "900"
+    "LOCAL_LLM_MAX_ITEMS" = "24"
+    "LOCAL_LLM_REFINEMENT_MODE" = "single"
     "LOCAL_LLM_BATCH_SIZE" = "6"
-    "LOCAL_LLM_FORCE_REWRITE" = "true"
+    "LOCAL_LLM_FORCE_REWRITE" = "false"
 }
 
 foreach ($key in $settings.Keys) {
@@ -54,6 +55,7 @@ foreach ($key in $settings.Keys) {
 
 Set-Content -Path $EnvPath -Value $envContent -Encoding UTF8
 
-Write-Host "Configured backend .env for aggressive Qwen batch refinement: $ProjectRoot" -ForegroundColor Green
+Write-Host "Configured backend .env for quality Qwen single-item refinement: $ProjectRoot" -ForegroundColor Green
+Write-Host "For faster batch mode, set LOCAL_LLM_REFINEMENT_MODE=batch in backend\.env" -ForegroundColor Yellow
 Write-Host "Put Qwen model here:" -ForegroundColor Cyan
 Write-Host "  $ModelsDir\Qwen3-14B-Q4_K_M.gguf" -ForegroundColor Cyan

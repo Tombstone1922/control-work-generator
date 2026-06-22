@@ -346,7 +346,14 @@ function LearningModePanel({ generationMode, setGenerationMode, learnedMaxItems,
 }
 
 function GenerationSummary({ generation }) {
-  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{generation.requested_mode}</strong></span><span>Использованный режим: <strong>{generation.used_mode}</strong></span><span>Узкая модель: <strong>{generation.narrow_llm_generated_items || 0}</strong></span><span>По примерам: <strong>{generation.learned_generated_items || 0}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items || 0}</strong></span>{generation.model_version && <span>Версия модели: <strong>{generation.model_version}</strong></span>}</div>{generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
+  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{generation.requested_mode}</strong></span><span>Использованный режим: <strong>{generation.used_mode}</strong></span><span>Узкая модель: <strong>{generation.narrow_llm_generated_items || 0}</strong></span><span>По примерам: <strong>{generation.learned_generated_items || 0}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items || 0}</strong></span>{generation.model_version && <span>Версия модели: <strong>{generation.model_version}</strong></span>}</div><GenerationProfiling profiling={generation.profiling} />{generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
+}
+
+function GenerationProfiling({ profiling }) {
+  if (!profiling || !profiling.total_ms) return null;
+  const llm = profiling.local_llm || {};
+  const stages = profiling.stages_ms || {};
+  return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Узкая модель: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>Qwen: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span></div><div className="itemBankStats"><span>Qwen режим: <strong>{llm.mode || '—'}</strong></span><span>Запросов Qwen: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено Qwen: <strong>{llm.refined_items || 0}</strong></span><span>Пропущено по типу: <strong>{llm.skipped_by_type || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов Qwen: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
 }
 
 function ValidationDashboard({ validation, sectionMap }) {
@@ -369,6 +376,13 @@ function successMessage(usedMode) {
   if (usedMode === 'learned') return 'Банк заданий сформирован на основе обучающей выборки.';
   if (usedMode === 'hybrid') return 'Банк заданий сформирован гибридно: узкая модель/примеры + контекстный модуль.';
   return 'Банк заданий сформирован контекстным генератором и проверен антидублем.';
+}
+
+function formatMs(value) {
+  const ms = Number(value || 0);
+  if (!ms) return '0 мс';
+  if (ms < 1000) return `${ms} мс`;
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} с`;
 }
 
 function sourceKindLabel(value) {

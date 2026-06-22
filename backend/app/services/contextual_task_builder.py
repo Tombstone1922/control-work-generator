@@ -20,6 +20,28 @@ OPERATIONS = [
     "подготовьте мини-кейс",
 ]
 
+PRACTICE_OPERATIONS = [
+    "разработайте",
+    "спроектируйте",
+    "составьте",
+    "реализуйте",
+    "проанализируйте",
+    "подготовьте",
+]
+
+ORAL_QUESTION_STEMS = [
+    "Вопрос: объясните, какую роль играет тема «{topic}» в дисциплине «{discipline}» и приведите предметный пример.",
+    "Вопрос: раскройте основные понятия темы «{topic}» и покажите их связь с темой «{related}».",
+    "Вопрос: назовите типовые ошибки по теме «{topic}» и объясните, как их обнаружить или предотвратить.",
+    "Вопрос: сравните два подхода к теме «{topic}» и укажите, в каких ситуациях каждый из них применим.",
+]
+
+COURSEWORK_TEMPLATES = [
+    "Тема курсовой работы: «Разработка решения по направлению “{topic}” для ситуации “{scenario}”».",
+    "Тема курсового проекта: «Проектирование и реализация компонента по теме “{topic}” в рамках проекта “{scenario}”».",
+    "Тема курсовой работы: «Анализ, проектирование и проверка решения по теме “{topic}”».",
+]
+
 SCENARIOS = [
     "учебный программный проект",
     "информационная система кафедры",
@@ -80,34 +102,39 @@ def _contextualize(
     variant: int,
 ) -> SmartTaskDraft:
     operation = OPERATIONS[variant % len(OPERATIONS)]
+    practice_operation = PRACTICE_OPERATIONS[variant % len(PRACTICE_OPERATIONS)]
     scenario = SCENARIOS[variant % len(SCENARIOS)]
     artifact = ARTIFACTS[variant % len(ARTIFACTS)]
     terms = _short_terms(context.key_terms, max_terms=3)
-    related = _short_related(context.related_topics, base.topic)
+    related = _short_related(context.related_topics, base.topic) or base.topic
+    discipline = context.discipline_name or context.profile_name or "дисциплины"
     context_tail = _context_tail(terms, related)
 
     bucket = _bucket(assessment_type, item_type)
     if bucket == "oral":
-        text = (
-            f"{operation.capitalize()} тему «{base.topic}» в контексте дисциплины «{context.discipline_name or context.profile_name}». "
-            f"В ответе используйте предметные понятия: {terms or 'ключевые понятия темы'}; покажите связь с темой «{related or base.topic}» и приведите пример из практики."
+        text = ORAL_QUESTION_STEMS[variant % len(ORAL_QUESTION_STEMS)].format(
+            topic=base.topic,
+            related=related,
+            discipline=discipline,
         )
+        text += f" В ответе используйте понятия: {terms or 'ключевые понятия темы'}."
     elif bucket == "coursework":
-        text = (
-            f"Тема курсовой работы: «{base.topic} в контексте {scenario}». "
-            f"В работе необходимо подготовить {artifact}, описать предметную область, применить понятия: {terms or 'ключевые понятия темы'}, "
-            f"связать решение с темой «{related or base.topic}» и определить критерии оценки результата."
+        text = COURSEWORK_TEMPLATES[variant % len(COURSEWORK_TEMPLATES)].format(topic=base.topic, scenario=scenario)
+        text += (
+            f" В работе необходимо раскрыть актуальность, сформулировать цель и задачи, выполнить анализ предметной области, "
+            f"подготовить {artifact}, применить понятия: {terms or 'ключевые понятия темы'}, "
+            f"описать ожидаемый результат и критерии его проверки."
         )
     elif bucket == "diagnostic":
         text = (
-            f"Выберите или сформулируйте корректное решение для ситуации «{scenario}» по теме «{base.topic}». "
+            f"Диагностическое задание: выберите или сформулируйте корректное решение для ситуации «{scenario}» по теме «{base.topic}». "
             f"При решении учитывайте: {terms or 'ключевые понятия темы'}{context_tail}."
         )
     else:
         text = (
-            f"Для ситуации «{scenario}» {operation} решение по теме «{base.topic}». "
-            f"Подготовьте {artifact}; используйте понятия: {terms or 'ключевые понятия темы'}{context_tail}. "
-            f"Результат должен быть проверяемым и связанным с практикой дисциплины."
+            f"Практическое задание: для ситуации «{scenario}» {practice_operation} результат по теме «{base.topic}». "
+            f"Необходимо подготовить {artifact}; использовать понятия: {terms or 'ключевые понятия темы'}{context_tail}. "
+            f"Результат должен быть представлен в проверяемом виде и сопровождаться кратким обоснованием."
         )
 
     answer = _answer(base.topic, bucket, terms, related, artifact)
@@ -174,20 +201,28 @@ def _context_tail(terms: str, related: str) -> str:
 
 def _answer(topic: str, bucket: str, terms: str, related: str, artifact: str) -> str:
     if bucket == "oral":
-        return f"Эталонный ответ раскрывает тему «{topic}», использует понятия {terms or 'предметной области'}, показывает связь с темой «{related or topic}» и содержит практический пример."
+        return f"Ожидаемый ответ: раскрыты ключевые понятия темы «{topic}», использованы понятия {terms or 'предметной области'}, показана связь с темой «{related or topic}» и приведен корректный пример."
     if bucket == "coursework":
-        return f"Работа должна содержать постановку задачи, {artifact}, применение понятий {terms or 'предметной области'}, проверку результата и выводы."
+        return f"Ожидаемая структура курсовой работы: актуальность, цель и задачи, анализ предметной области, проектное решение, {artifact}, проверка результата, выводы и список источников."
     if bucket == "diagnostic":
         return f"Правильный ответ должен учитывать тему «{topic}», понятия {terms or 'предметной области'} и проверяемый практический результат."
-    return f"Решение должно содержать {artifact}, применение понятий {terms or 'предметной области'}, связь с темой «{related or topic}», проверку результата и вывод."
+    return f"Ожидаемый результат: подготовлен {artifact}, применены понятия {terms or 'предметной области'}, показана связь с темой «{related or topic}», результат проверен и кратко обоснован."
 
 
 def _criteria(bucket: str, terms: str, artifact: str) -> list[str]:
     if bucket == "oral":
         return [
+            "Ответ прямо отвечает на поставленный вопрос.",
             "Раскрыты ключевые понятия темы.",
             "Показана связь с соседними темами дисциплины.",
             "Приведен корректный предметный пример.",
+        ]
+    if bucket == "coursework":
+        return [
+            "Тема курсовой работы соответствует дисциплине и заявленной проблематике.",
+            "Сформулированы цель, задачи и ожидаемый результат работы.",
+            f"Предусмотрен практический или проектный результат: {artifact}.",
+            "Указаны критерии проверки результата и выводы.",
         ]
     return [
         f"Подготовлен требуемый результат: {artifact}.",

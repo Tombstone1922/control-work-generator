@@ -15,6 +15,7 @@ SINGLE_SYSTEM_PROMPT = """
 Твоя задача — улучшить ОДНО оценочное задание по дисциплине.
 Используй только переданный контекст, не выдумывай лишние темы.
 Сделай задание предметным, проверяемым и отличающимся от уже созданных заданий.
+Строго соблюдай жанр задания по assessment_type.
 Не повторяй формулировки из списка запретов.
 Верни строго JSON без markdown и без пояснений.
 JSON-схема:
@@ -31,6 +32,7 @@ BATCH_SYSTEM_PROMPT = """
 Ты улучшаешь пакет оценочных заданий по дисциплине.
 Используй только переданный контекст и не выдумывай темы вне дисциплины.
 Каждое задание должно быть предметным, проверяемым и отличаться от остальных.
+Строго соблюдай жанр каждого задания по assessment_type.
 Не оставляй шаблонные формулировки. Не пиши markdown. Не пиши рассуждения.
 Верни строго JSON-объект:
 {
@@ -45,6 +47,20 @@ BATCH_SYSTEM_PROMPT = """
   ]
 }
 """.strip()
+
+TYPE_CONTRACTS = {
+    "oral": "Устное задание должно быть именно вопросом для ответа студента. Начни с 'Вопрос:'. Не проси разрабатывать проект, писать код или выполнять практическую работу. answer должен описывать ожидаемый устный ответ.",
+    "exam_questions": "Экзаменационный вопрос должен быть именно вопросом для ответа студента. Начни с 'Вопрос:'. answer должен быть краткой структурой правильного ответа.",
+    "credit": "Зачетный вопрос должен быть именно вопросом для ответа студента. Начни с 'Вопрос:'. answer должен быть краткой структурой правильного ответа.",
+    "practice": "Практическое задание должно требовать выполнить конкретное действие и получить проверяемый результат: код, схему, таблицу, SQL-запрос, тест-кейс, чек-лист, прототип, документ или анализ кейса. Начни с 'Практическое задание:'.",
+    "exam_practice": "Практическое экзаменационное задание должно требовать выполнить конкретную практическую задачу с проверяемым результатом. Начни с 'Практическое задание:'.",
+    "laboratory": "Лабораторное задание должно требовать выполнить эксперимент/реализацию/проверку и зафиксировать результат. Начни с 'Лабораторное задание:'.",
+    "coursework": "Курсовая должна быть темой курсовой работы, а не обычным практическим заданием. Начни с 'Тема курсовой работы:'. В answer дай ожидаемую структуру курсовой.",
+    "course_project": "Курсовой проект должен быть темой курсового проекта, а не обычным заданием. Начни с 'Тема курсового проекта:'. В answer дай ожидаемую структуру проекта.",
+    "control_work": "Контрольная работа должна быть самостоятельным проверочным заданием с условиями, ходом решения и проверяемым результатом. Начни с 'Контрольное задание:'.",
+    "diagnostic": "Диагностическое задание должно проверять текущий уровень освоения темы через выбор, краткое решение или анализ ситуации. Начни с 'Диагностическое задание:'.",
+    "test_bank": "Тестовое задание должно быть проверочным вопросом или мини-задачей с однозначной проверкой. Не превращай его в курсовую или лабораторную.",
+}
 
 
 def refine_items_with_local_llm(
@@ -113,6 +129,11 @@ def _refine_items_single(
             continue
 
         text = candidate["text"]
+        if not _matches_type_contract(text, item.assessment_type, item.item_type):
+            refined.append(item)
+            used_texts.append(item.text)
+            failed_count += 1
+            continue
         if not force_rewrite and _too_similar(text, used_texts, threshold=0.86):
             refined.append(item)
             used_texts.append(item.text)
@@ -141,7 +162,7 @@ def _refine_items_single(
     if refined_count:
         warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; режим: single; модель: {settings.model}.")
     if failed_count:
-        warnings.append(f"Локальная LLM не ответила или вернула некорректный JSON для заданий: {failed_count}; оставлены базовые задания.")
+        warnings.append(f"Локальная LLM не ответила, вернула некорректный JSON или нарушила тип задания: {failed_count}; оставлены базовые задания.")
     if skipped_similar:
         warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
     return refined, warnings
@@ -204,6 +225,11 @@ def _refine_items_batch(
                 continue
 
             text = candidate["text"]
+            if not _matches_type_contract(text, item.assessment_type, item.item_type):
+                refined.append(item)
+                used_texts.append(item.text)
+                failed_count += 1
+                continue
             if not force_rewrite and _too_similar(text, used_texts, threshold=0.88):
                 refined.append(item)
                 used_texts.append(item.text)
@@ -239,7 +265,7 @@ def _refine_items_batch(
         )
     if failed_count:
         warnings.append(
-            f"Локальная LLM не вернула корректный JSON для заданий: {failed_count}; "
+            f"Локальная LLM не вернула корректный JSON или нарушила тип задания: {failed_count}; "
             "для них оставлены базовые задания."
         )
     if skipped_similar:
@@ -253,6 +279,7 @@ def _build_single_prompt(*, item: AssessmentItemRead, discipline_name: str, cont
         "topic": normalize_topic(item.topic),
         "assessment_type": item.assessment_type,
         "item_type": item.item_type,
+        "type_contract": _type_contract(item.assessment_type, item.item_type),
         "difficulty": item.difficulty,
         "competency_code": item.competency_code,
         "indicator": item.indicator,
@@ -271,10 +298,11 @@ def _build_single_prompt(*, item: AssessmentItemRead, discipline_name: str, cont
         },
         "already_created_tasks_do_not_repeat": used_texts,
         "requirements": [
-            "Сделай задание конкретным для темы и дисциплины.",
-            "Добавь проверяемый результат: артефакт, расчёт, фрагмент кода, чек-лист, схема, SQL-запрос, тест-кейс или анализ кейса — в зависимости от темы.",
-            "Не используй общую формулировку вида 'раскройте тему' без предметного действия.",
-            "Ответ и критерии должны соответствовать заданию.",
+            "Строго соблюдай type_contract.",
+            "Сделай формулировку конкретной для темы и дисциплины.",
+            "Не смешивай жанры: устный вопрос не должен быть практическим заданием, курсовая не должна быть обычным заданием.",
+            "Для практических заданий добавь проверяемый результат: артефакт, расчёт, фрагмент кода, чек-лист, схема, SQL-запрос, тест-кейс или анализ кейса — в зависимости от темы.",
+            "Ответ и критерии должны соответствовать именно этому типу задания.",
             "Верни только JSON по схеме из system prompt.",
         ],
     }
@@ -301,6 +329,7 @@ def _build_batch_prompt(
             "topic": normalize_topic(item.topic),
             "assessment_type": item.assessment_type,
             "item_type": item.item_type,
+            "type_contract": _type_contract(item.assessment_type, item.item_type),
             "difficulty": item.difficulty,
             "competency_code": item.competency_code,
             "indicator": _trim(item.indicator, 260),
@@ -324,12 +353,11 @@ def _build_batch_prompt(
         "already_created_tasks_do_not_repeat": [_trim(value, 260) for value in used_texts],
         "items": payload_items,
         "requirements": [
-            "Перепиши каждое задание заметно сильнее базового варианта.",
-            "Не ограничивайся заменой слов: добавь конкретный проверяемый результат.",
-            "Для программных дисциплин используй артефакты: фрагмент кода, схема, SQL-запрос, тест-кейс, алгоритм, компонент, API-контракт, чек-лист.",
+            "Строго соблюдай type_contract для каждого item.",
+            "Не смешивай жанры: oral/exam/credit — это вопрос; practice/laboratory — практическое выполнение; coursework/course_project — тема курсовой.",
+            "Перепиши каждое задание сильнее базового варианта, но не меняй его тип.",
             "Для каждого входного item верни один выходной item с тем же index.",
-            "Ответ должен быть кратким, но предметным.",
-            "Критерии должны проверять выполнение конкретного результата.",
+            "Ответ и критерии должны соответствовать типу задания.",
             "Верни только JSON по схеме из system prompt.",
         ],
     }
@@ -378,6 +406,27 @@ def _sanitize_llm_result(data: dict) -> dict | None:
         "criteria": criteria[:5],
         "uniqueness_reason": uniqueness_reason,
     }
+
+
+def _type_contract(assessment_type: str, item_type: str) -> str:
+    if item_type in {"coursework_topic", "project_topic"}:
+        return TYPE_CONTRACTS.get("course_project") if item_type == "project_topic" else TYPE_CONTRACTS.get("coursework")
+    return TYPE_CONTRACTS.get(assessment_type, TYPE_CONTRACTS["practice"])
+
+
+def _matches_type_contract(text: str, assessment_type: str, item_type: str) -> bool:
+    lower = _clean_text(text).lower()
+    if assessment_type in {"oral", "exam_questions", "credit"}:
+        return lower.startswith("вопрос") or "?" in text[:240]
+    if assessment_type in {"coursework", "course_project"} or item_type in {"coursework_topic", "project_topic"}:
+        return lower.startswith("тема курсов")
+    if assessment_type in {"practice", "exam_practice"}:
+        return lower.startswith("практическое задание") or any(word in lower[:120] for word in ("разработайте", "выполните", "спроектируйте", "реализуйте", "составьте"))
+    if assessment_type == "laboratory":
+        return lower.startswith("лабораторное задание") or "лаборатор" in lower[:140]
+    if assessment_type == "control_work":
+        return lower.startswith("контрольное задание") or "контрольн" in lower[:140]
+    return True
 
 
 def _clean_text(value) -> str:

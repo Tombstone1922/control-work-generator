@@ -10,7 +10,23 @@ from app.services.assessment_item_smart_builder import normalize_topic
 from app.services.discipline_knowledge_base import get_topic_knowledge_context
 from app.services.local_llm_client import LocalLLMClient, get_local_llm_settings
 
-SYSTEM_PROMPT = """
+SINGLE_SYSTEM_PROMPT = """
+Ты вузовский преподаватель, методист и разработчик фонда оценочных средств.
+Твоя задача — улучшить ОДНО оценочное задание по дисциплине.
+Используй только переданный контекст, не выдумывай лишние темы.
+Сделай задание предметным, проверяемым и отличающимся от уже созданных заданий.
+Не повторяй формулировки из списка запретов.
+Верни строго JSON без markdown и без пояснений.
+JSON-схема:
+{
+  "text": "формулировка задания",
+  "answer": "краткий эталонный ответ или структура эталонного решения",
+  "criteria": ["критерий 1", "критерий 2", "критерий 3"],
+  "uniqueness_reason": "чем это задание отличается"
+}
+""".strip()
+
+BATCH_SYSTEM_PROMPT = """
 Ты вузовский преподаватель, методист и разработчик фонда оценочных средств.
 Ты улучшаешь пакет оценочных заданий по дисциплине.
 Используй только переданный контекст и не выдумывай темы вне дисциплины.
@@ -41,6 +57,103 @@ def refine_items_with_local_llm(
     if not settings.enabled:
         return items, []
 
+    mode = os.getenv("LOCAL_LLM_REFINEMENT_MODE", "single").strip().lower()
+    if mode == "batch":
+        return _refine_items_batch(items=items, discipline_name=discipline_name, all_topics=all_topics)
+    return _refine_items_single(items=items, discipline_name=discipline_name, all_topics=all_topics)
+
+
+def _refine_items_single(
+    *,
+    items: list[AssessmentItemRead],
+    discipline_name: str,
+    all_topics: list[str],
+) -> tuple[list[AssessmentItemRead], list[str]]:
+    settings = get_local_llm_settings()
+    client = LocalLLMClient(settings)
+    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 24, minimum=1, maximum=max(len(items), 1))
+    force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", False)
+
+    refined: list[AssessmentItemRead] = []
+    warnings: list[str] = []
+    used_texts: list[str] = []
+    refined_count = 0
+    failed_count = 0
+    skipped_similar = 0
+
+    for index, item in enumerate(items):
+        if index >= max_items:
+            refined.append(item)
+            used_texts.append(item.text)
+            continue
+
+        context = get_topic_knowledge_context(
+            discipline_name=discipline_name,
+            topic=normalize_topic(item.topic),
+            all_topics=all_topics,
+        )
+        prompt = _build_single_prompt(
+            item=item,
+            discipline_name=discipline_name,
+            context=context,
+            used_texts=used_texts[-12:],
+        )
+        data = client.chat_json(system_prompt=SINGLE_SYSTEM_PROMPT, user_prompt=prompt)
+        if not data:
+            refined.append(item)
+            used_texts.append(item.text)
+            failed_count += 1
+            continue
+
+        candidate = _sanitize_llm_result(data)
+        if not candidate:
+            refined.append(item)
+            used_texts.append(item.text)
+            failed_count += 1
+            continue
+
+        text = candidate["text"]
+        if not force_rewrite and _too_similar(text, used_texts, threshold=0.86):
+            refined.append(item)
+            used_texts.append(item.text)
+            skipped_similar += 1
+            continue
+        if _too_similar(text, used_texts, threshold=0.96):
+            refined.append(item)
+            used_texts.append(item.text)
+            skipped_similar += 1
+            continue
+
+        updated = item.model_copy(update={
+            "text": text,
+            "answer": candidate["answer"],
+            "criteria": candidate["criteria"],
+            "source_kind": "local_llm_qwen3",
+            "source_context": (
+                f"Local LLM single refiner; model={settings.model}; "
+                f"topic=«{normalize_topic(item.topic)}»; reason={candidate.get('uniqueness_reason', '')}"
+            ),
+        })
+        refined.append(updated)
+        used_texts.append(text)
+        refined_count += 1
+
+    if refined_count:
+        warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; режим: single; модель: {settings.model}.")
+    if failed_count:
+        warnings.append(f"Локальная LLM не ответила или вернула некорректный JSON для заданий: {failed_count}; оставлены базовые задания.")
+    if skipped_similar:
+        warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
+    return refined, warnings
+
+
+def _refine_items_batch(
+    *,
+    items: list[AssessmentItemRead],
+    discipline_name: str,
+    all_topics: list[str],
+) -> tuple[list[AssessmentItemRead], list[str]]:
+    settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
     max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 60, minimum=1, maximum=max(len(items), 1))
     batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 6, minimum=1, maximum=10)
@@ -66,7 +179,7 @@ def refine_items_with_local_llm(
             all_topics=all_topics,
             used_texts=used_texts[-18:],
         )
-        data = client.chat_json(system_prompt=SYSTEM_PROMPT, user_prompt=prompt)
+        data = client.chat_json(system_prompt=BATCH_SYSTEM_PROMPT, user_prompt=prompt)
         batches_count += 1
         if not data:
             refined.extend(batch)
@@ -122,7 +235,7 @@ def refine_items_with_local_llm(
     if refined_count:
         warnings.append(
             f"Локальная LLM агрессивно улучшила формулировки заданий: {refined_count}; "
-            f"пакетов: {batches_count}; модель: {settings.model}."
+            f"режим: batch; пакетов: {batches_count}; модель: {settings.model}."
         )
     if failed_count:
         warnings.append(
@@ -132,6 +245,40 @@ def refine_items_with_local_llm(
     if skipped_similar:
         warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
     return refined, warnings
+
+
+def _build_single_prompt(*, item: AssessmentItemRead, discipline_name: str, context, used_texts: list[str]) -> str:
+    payload = {
+        "discipline_name": discipline_name,
+        "topic": normalize_topic(item.topic),
+        "assessment_type": item.assessment_type,
+        "item_type": item.item_type,
+        "difficulty": item.difficulty,
+        "competency_code": item.competency_code,
+        "indicator": item.indicator,
+        "base_task": {
+            "text": item.text,
+            "answer": item.answer,
+            "criteria": item.criteria,
+        },
+        "knowledge_context": {
+            "profile_name": context.profile_name,
+            "related_topics": context.related_topics,
+            "learning_outcomes": context.learning_outcomes,
+            "competencies": context.competencies,
+            "key_terms": context.key_terms,
+            "source": context.source,
+        },
+        "already_created_tasks_do_not_repeat": used_texts,
+        "requirements": [
+            "Сделай задание конкретным для темы и дисциплины.",
+            "Добавь проверяемый результат: артефакт, расчёт, фрагмент кода, чек-лист, схема, SQL-запрос, тест-кейс или анализ кейса — в зависимости от темы.",
+            "Не используй общую формулировку вида 'раскройте тему' без предметного действия.",
+            "Ответ и критерии должны соответствовать заданию.",
+            "Верни только JSON по схеме из system prompt.",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _build_batch_prompt(

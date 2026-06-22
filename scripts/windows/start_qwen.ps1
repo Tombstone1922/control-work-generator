@@ -26,6 +26,14 @@ function Find-LlamaServer {
     return $null
 }
 
+function Start-LlamaServerWithArgs($argsList, $label) {
+    Write-Host "Trying llama-server launch: $label" -ForegroundColor Cyan
+    & $LlamaServer @argsList
+    if ($LASTEXITCODE -ne 0) {
+        throw "llama-server failed with exit code $LASTEXITCODE"
+    }
+}
+
 if (!(Test-Path $ModelPath)) {
     Write-Host "Model file not found:" -ForegroundColor Red
     Write-Host "  $ModelPath" -ForegroundColor Red
@@ -49,7 +57,7 @@ Write-Host "Starting Qwen3 local server optimized for RTX 5070..." -ForegroundCo
 Write-Host "llama-server: $LlamaServer" -ForegroundColor Cyan
 Write-Host "Model:        $ModelPath" -ForegroundColor Cyan
 Write-Host "URL:          http://127.0.0.1:8081/v1" -ForegroundColor Cyan
-Write-Host "Params:       -c 4096 -t 8 -ngl 99 -np 1" -ForegroundColor Cyan
+Write-Host "Params:       -c 4096 -t 8 -ngl 99 -np 1 --flash-attn auto" -ForegroundColor Cyan
 
 $baseArgs = @(
     "-m", $ModelPath,
@@ -62,13 +70,13 @@ $baseArgs = @(
 )
 
 try {
-    & $LlamaServer @baseArgs --jinja -fa
+    Start-LlamaServerWithArgs ($baseArgs + @("--jinja", "--flash-attn", "auto")) "optimized + jinja + flash-attn auto"
 } catch {
-    Write-Host "Failed to start with --jinja -fa. Trying without -fa..." -ForegroundColor Yellow
+    Write-Host "Failed optimized flash-attn launch. Trying without flash-attn..." -ForegroundColor Yellow
     try {
-        & $LlamaServer @baseArgs --jinja
+        Start-LlamaServerWithArgs ($baseArgs + @("--jinja")) "optimized + jinja"
     } catch {
-        Write-Host "Failed to start with --jinja. Trying basic optimized launch..." -ForegroundColor Yellow
-        & $LlamaServer @baseArgs
+        Write-Host "Failed with --jinja. Trying basic optimized launch..." -ForegroundColor Yellow
+        Start-LlamaServerWithArgs $baseArgs "optimized basic"
     }
 }

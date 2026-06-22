@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from app.schemas import AssessmentItemRead
@@ -65,15 +67,56 @@ TYPE_CONTRACTS = {
 DEFAULT_SKIP_TYPES = "oral,exam_questions,credit,test_bank,diagnostic"
 
 
+@dataclass
+class LocalLLMRefinementProfile:
+    enabled: bool = False
+    mode: str = "disabled"
+    model: str = ""
+    max_items: int = 0
+    batch_size: int = 0
+    requested_items: int = 0
+    attempted_items: int = 0
+    refined_items: int = 0
+    failed_items: int = 0
+    skipped_by_type: int = 0
+    skipped_similar: int = 0
+    calls: int = 0
+    total_ms: int = 0
+    llm_ms: int = 0
+    avg_call_ms: int = 0
+    call_ms: list[int] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "enabled": self.enabled,
+            "mode": self.mode,
+            "model": self.model,
+            "max_items": self.max_items,
+            "batch_size": self.batch_size,
+            "requested_items": self.requested_items,
+            "attempted_items": self.attempted_items,
+            "refined_items": self.refined_items,
+            "failed_items": self.failed_items,
+            "skipped_by_type": self.skipped_by_type,
+            "skipped_similar": self.skipped_similar,
+            "calls": self.calls,
+            "total_ms": self.total_ms,
+            "llm_ms": self.llm_ms,
+            "avg_call_ms": self.avg_call_ms,
+            "call_ms": self.call_ms[:12],
+        }
+
+
 def refine_items_with_local_llm(
     *,
     items: list[AssessmentItemRead],
     discipline_name: str,
     all_topics: list[str],
-) -> tuple[list[AssessmentItemRead], list[str]]:
+) -> tuple[list[AssessmentItemRead], list[str], dict]:
     settings = get_local_llm_settings()
     if not settings.enabled:
-        return items, []
+        profile = LocalLLMRefinementProfile(enabled=False, requested_items=len(items)).as_dict()
+        return items, [], profile
 
     mode = os.getenv("LOCAL_LLM_REFINEMENT_MODE", "single").strip().lower()
     if mode == "batch":
@@ -86,33 +129,37 @@ def _refine_items_single(
     items: list[AssessmentItemRead],
     discipline_name: str,
     all_topics: list[str],
-) -> tuple[list[AssessmentItemRead], list[str]]:
+) -> tuple[list[AssessmentItemRead], list[str], dict]:
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
     max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
     force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", False)
     skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
+    started = time.perf_counter()
+    profile = LocalLLMRefinementProfile(
+        enabled=True,
+        mode="single-fast",
+        model=settings.model,
+        max_items=max_items,
+        batch_size=1,
+        requested_items=len(items),
+    )
 
     refined: list[AssessmentItemRead] = []
     warnings: list[str] = []
     used_texts: list[str] = []
-    refined_count = 0
-    failed_count = 0
-    skipped_similar = 0
-    skipped_by_type = 0
-    llm_attempts = 0
 
     for item in items:
         if _should_skip_item(item, skip_types):
             refined.append(item)
             used_texts.append(item.text)
-            skipped_by_type += 1
+            profile.skipped_by_type += 1
             continue
-        if llm_attempts >= max_items:
+        if profile.attempted_items >= max_items:
             refined.append(item)
             used_texts.append(item.text)
             continue
-        llm_attempts += 1
+        profile.attempted_items += 1
 
         context = get_topic_knowledge_context(
             discipline_name=discipline_name,
@@ -125,35 +172,40 @@ def _refine_items_single(
             context=context,
             used_texts=used_texts[-8:],
         )
+        call_started = time.perf_counter()
         data = client.chat_json(system_prompt=SINGLE_SYSTEM_PROMPT, user_prompt=prompt)
+        call_ms = int((time.perf_counter() - call_started) * 1000)
+        profile.calls += 1
+        profile.llm_ms += call_ms
+        profile.call_ms.append(call_ms)
         if not data:
             refined.append(item)
             used_texts.append(item.text)
-            failed_count += 1
+            profile.failed_items += 1
             continue
 
         candidate = _sanitize_llm_result(data)
         if not candidate:
             refined.append(item)
             used_texts.append(item.text)
-            failed_count += 1
+            profile.failed_items += 1
             continue
 
         text = candidate["text"]
         if not _matches_type_contract(text, item.assessment_type, item.item_type):
             refined.append(item)
             used_texts.append(item.text)
-            failed_count += 1
+            profile.failed_items += 1
             continue
         if not force_rewrite and _too_similar(text, used_texts, threshold=0.86):
             refined.append(item)
             used_texts.append(item.text)
-            skipped_similar += 1
+            profile.skipped_similar += 1
             continue
         if _too_similar(text, used_texts, threshold=0.96):
             refined.append(item)
             used_texts.append(item.text)
-            skipped_similar += 1
+            profile.skipped_similar += 1
             continue
 
         updated = item.model_copy(update={
@@ -168,17 +220,20 @@ def _refine_items_single(
         })
         refined.append(updated)
         used_texts.append(text)
-        refined_count += 1
+        profile.refined_items += 1
 
-    if refined_count:
-        warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; режим: single-fast; модель: {settings.model}.")
-    if skipped_by_type:
-        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {skipped_by_type}.")
-    if failed_count:
-        warnings.append(f"Локальная LLM не ответила, вернула некорректный JSON или нарушила тип задания: {failed_count}; оставлены базовые задания.")
-    if skipped_similar:
-        warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
-    return refined, warnings
+    profile.total_ms = int((time.perf_counter() - started) * 1000)
+    profile.avg_call_ms = int(profile.llm_ms / profile.calls) if profile.calls else 0
+
+    if profile.refined_items:
+        warnings.append(f"Локальная LLM улучшила формулировки заданий: {profile.refined_items}; режим: single-fast; модель: {settings.model}.")
+    if profile.skipped_by_type:
+        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {profile.skipped_by_type}.")
+    if profile.failed_items:
+        warnings.append(f"Локальная LLM не ответила, вернула некорректный JSON или нарушила тип задания: {profile.failed_items}; оставлены базовые задания.")
+    if profile.skipped_similar:
+        warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {profile.skipped_similar}; оставлены базовые задания.")
+    return refined, warnings, profile.as_dict()
 
 
 def _refine_items_batch(
@@ -186,34 +241,39 @@ def _refine_items_batch(
     items: list[AssessmentItemRead],
     discipline_name: str,
     all_topics: list[str],
-) -> tuple[list[AssessmentItemRead], list[str]]:
+) -> tuple[list[AssessmentItemRead], list[str], dict]:
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
     max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 24, minimum=1, maximum=max(len(items), 1))
     batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 4, minimum=1, maximum=10)
     force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
     skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
+    started = time.perf_counter()
+    profile = LocalLLMRefinementProfile(
+        enabled=True,
+        mode="batch-fast",
+        model=settings.model,
+        max_items=max_items,
+        batch_size=batch_size,
+        requested_items=len(items),
+    )
 
     refined: list[AssessmentItemRead] = []
     warnings: list[str] = []
     used_texts: list[str] = []
-    refined_count = 0
-    failed_count = 0
-    skipped_similar = 0
-    skipped_by_type = 0
-    batches_count = 0
 
     target_items: list[AssessmentItemRead] = []
     tail_items: list[AssessmentItemRead] = []
     for item in items:
         if _should_skip_item(item, skip_types):
             tail_items.append(item)
-            skipped_by_type += 1
+            profile.skipped_by_type += 1
         elif len(target_items) < max_items:
             target_items.append(item)
         else:
             tail_items.append(item)
 
+    profile.attempted_items = len(target_items)
     for batch_start in range(0, len(target_items), batch_size):
         batch = target_items[batch_start : batch_start + batch_size]
         prompt = _build_batch_prompt(
@@ -223,19 +283,23 @@ def _refine_items_batch(
             all_topics=all_topics,
             used_texts=used_texts[-12:],
         )
+        call_started = time.perf_counter()
         data = client.chat_json(system_prompt=BATCH_SYSTEM_PROMPT, user_prompt=prompt)
-        batches_count += 1
+        call_ms = int((time.perf_counter() - call_started) * 1000)
+        profile.calls += 1
+        profile.llm_ms += call_ms
+        profile.call_ms.append(call_ms)
         if not data:
             refined.extend(batch)
             used_texts.extend(item.text for item in batch)
-            failed_count += len(batch)
+            profile.failed_items += len(batch)
             continue
 
         candidates = _sanitize_batch_result(data)
         if not candidates:
             refined.extend(batch)
             used_texts.extend(item.text for item in batch)
-            failed_count += len(batch)
+            profile.failed_items += len(batch)
             continue
 
         candidate_by_index = {candidate["index"]: candidate for candidate in candidates}
@@ -244,24 +308,24 @@ def _refine_items_batch(
             if not candidate:
                 refined.append(item)
                 used_texts.append(item.text)
-                failed_count += 1
+                profile.failed_items += 1
                 continue
 
             text = candidate["text"]
             if not _matches_type_contract(text, item.assessment_type, item.item_type):
                 refined.append(item)
                 used_texts.append(item.text)
-                failed_count += 1
+                profile.failed_items += 1
                 continue
             if not force_rewrite and _too_similar(text, used_texts, threshold=0.88):
                 refined.append(item)
                 used_texts.append(item.text)
-                skipped_similar += 1
+                profile.skipped_similar += 1
                 continue
             if _too_similar(text, used_texts, threshold=0.96):
                 refined.append(item)
                 used_texts.append(item.text)
-                skipped_similar += 1
+                profile.skipped_similar += 1
                 continue
 
             updated = item.model_copy(update={
@@ -277,25 +341,27 @@ def _refine_items_batch(
             })
             refined.append(updated)
             used_texts.append(text)
-            refined_count += 1
+            profile.refined_items += 1
 
     refined.extend(tail_items)
+    profile.total_ms = int((time.perf_counter() - started) * 1000)
+    profile.avg_call_ms = int(profile.llm_ms / profile.calls) if profile.calls else 0
 
-    if refined_count:
+    if profile.refined_items:
         warnings.append(
-            f"Локальная LLM агрессивно улучшила формулировки заданий: {refined_count}; "
-            f"режим: batch-fast; пакетов: {batches_count}; модель: {settings.model}."
+            f"Локальная LLM агрессивно улучшила формулировки заданий: {profile.refined_items}; "
+            f"режим: batch-fast; пакетов: {profile.calls}; модель: {settings.model}."
         )
-    if skipped_by_type:
-        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {skipped_by_type}.")
-    if failed_count:
+    if profile.skipped_by_type:
+        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {profile.skipped_by_type}.")
+    if profile.failed_items:
         warnings.append(
-            f"Локальная LLM не вернула корректный JSON или нарушила тип задания: {failed_count}; "
+            f"Локальная LLM не вернула корректный JSON или нарушила тип задания: {profile.failed_items}; "
             "для них оставлены базовые задания."
         )
-    if skipped_similar:
-        warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {skipped_similar}; оставлены базовые задания.")
-    return refined, warnings
+    if profile.skipped_similar:
+        warnings.append(f"Локальная LLM предложила слишком похожие формулировки: {profile.skipped_similar}; оставлены базовые задания.")
+    return refined, warnings, profile.as_dict()
 
 
 def _build_single_prompt(*, item: AssessmentItemRead, discipline_name: str, context, used_texts: list[str]) -> str:

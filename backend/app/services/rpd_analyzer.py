@@ -6,7 +6,7 @@ SECTION_PATTERNS = {
     "Цели и задачи дисциплины": ("цель дисциплины", "цели дисциплины", "задачи дисциплины"),
     "Компетенции": ("компетенц", "планируемые результаты освоения"),
     "Результаты обучения": ("результаты обучения", "знать", "уметь", "владеть"),
-    "Содержание дисциплины": ("содержание дисциплины", "тематический план", "разделы дисциплины", "темы дисциплины"),
+    "Содержание дисциплины": ("содержание дисциплины", "тематический план", "разделы дисциплины", "темы дисциплины", "содержание учебной дисциплины", "структура и содержание"),
     "Оценочные материалы": ("оценочные материалы", "фонд оценочных средств", "контрольные задания"),
     "Литература": ("литература", "список литературы", "основная литература", "дополнительная литература", "перечень ресурсов"),
 }
@@ -40,11 +40,23 @@ SECTION_HEADING_WORDS = (
     "заочная форма обучения", "очная форма обучения", "итого", "направления подготовки", "направлению подготовки",
 )
 
+TOPIC_HEADER_WORDS = (
+    "наименование темы", "наименование раздела", "темы дисциплины", "разделы дисциплины", "содержание темы",
+    "содержание раздела", "тема занятия", "название темы", "тематический план",
+)
+
+ACTION_VERBS = (
+    "знать", "уметь", "владеть", "понимать", "применять", "использовать", "анализировать",
+    "оценивать", "разрабатывать", "создавать", "проектировать", "реализовывать", "формировать",
+    "выбирать", "обосновывать", "настраивать", "тестировать", "отлаживать", "оптимизировать",
+)
+
 COMPETENCY_CODE_PATTERN = re.compile(r"\b(?:УК|ОПК|ПК|ПКО|ПКС|ОК)-?\d+(?:\.\d+)?\b", re.IGNORECASE)
 INDICATOR_CODE_PATTERN = re.compile(r"\bИД[-–—]?[А-Яа-яA-Za-z]*\s*[-–—]?\s*(?:УК|ОПК|ПК|ПКО|ПКС|ОК)[-–—]?\d+(?:\.\d+)?\b", re.IGNORECASE)
 EXPLICIT_TOPIC_PATTERN = re.compile(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*(.+)$", re.IGNORECASE)
 NUMBERED_TOPIC_PATTERN = re.compile(r"^\d+(?:\.\d+)*[\.\)]\s+(.{4,180})$", re.IGNORECASE)
 BULLET_TOPIC_PATTERN = re.compile(r"^[\-–—•]\s*(.{4,180})$", re.IGNORECASE)
+TABLE_TOPIC_PATTERN = re.compile(r"^(?:\d+\s*[|\s]+){1,3}(.{8,180}?)(?:\s+\d+\s*){1,8}$", re.IGNORECASE)
 OUTCOME_SEGMENT_PATTERN = re.compile(
     r"(?:^|\|\s*|\s)(Знать|Уметь|Владеть)\s*:?\s*(.*?)(?=\s+(?:Знать|Уметь|Владеть)\s*:|$)",
     re.IGNORECASE,
@@ -87,8 +99,17 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
     topics, topic_sources = _extract_topics(clean_lines, sections, raw_lines)
     competencies, competency_sources = _extract_competencies(normalized)
     outcomes, outcome_sources = _extract_learning_outcomes(clean_lines, sections)
+    outcomes = _normalize_learning_outcomes(outcomes, topics)
 
     strategy = "rules+sections"
+    if len(topics) < 5:
+        fallback_topics = _fallback_topics_from_document(clean_lines, sections, raw_lines)
+        before = len(topics)
+        topics = _unique_keep_order([*topics, *fallback_topics])
+        if len(topics) > before:
+            strategy = "rules+sections+table-fallback"
+            topic_sources.extend(fallback_topics)
+
     if not topics:
         discipline_topic = _extract_discipline_topic(raw_lines)
         if discipline_topic:
@@ -100,7 +121,7 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
             topic_sources = []
             strategy = "empty"
 
-    topics = _unique_keep_order(topics)[:40]
+    topics = _unique_keep_order([_normalize_topic_title(topic) for topic in topics if _normalize_topic_title(topic)])[:40]
     competencies = _unique_keep_order(competencies)[:40]
     outcomes = _unique_keep_order(outcomes)[:40]
     detected_sections = list(sections.keys())
@@ -108,6 +129,8 @@ def analyze_rpd_text(text: str) -> RpdAnalysisResult:
     warnings: list[str] = []
     if not topics:
         warnings.append("Темы дисциплины не обнаружены. Проверьте структуру РПД вручную.")
+    elif len(topics) < 5:
+        warnings.append("Темы дисциплины распознаны частично; применено fallback-извлечение из табличного текста.")
     if not competencies:
         warnings.append("Коды компетенций не обнаружены.")
     if not outcomes:
@@ -156,7 +179,7 @@ def _detect_sections(lines: list[str]) -> dict[str, list[str]]:
         lower = line.lower()
         matched_section = None
         for section_name, markers in SECTION_PATTERNS.items():
-            if any(marker in lower for marker in markers) and len(line) <= 180:
+            if any(marker in lower for marker in markers) and len(line) <= 220:
                 matched_section = section_name
                 break
         if matched_section:
@@ -181,13 +204,17 @@ def _extract_topics(
         return explicit_topics, explicit_sources
 
     if has_content_section:
-        table_topics, table_sources = _collect_topic_matches(candidates, [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN])
+        table_topics, table_sources = _collect_topic_matches(candidates, [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN, TABLE_TOPIC_PATTERN])
         if table_topics:
             return table_topics, table_sources
 
     all_explicit, all_sources = _collect_topic_matches(_topic_candidate_lines(lines), [EXPLICIT_TOPIC_PATTERN])
     if all_explicit:
         return all_explicit, all_sources
+
+    all_table, all_table_sources = _collect_topic_matches(_topic_candidate_lines(lines), [NUMBERED_TOPIC_PATTERN, BULLET_TOPIC_PATTERN, TABLE_TOPIC_PATTERN])
+    if all_table:
+        return all_table, all_table_sources
 
     discipline_topic = _extract_discipline_topic(raw_lines or lines)
     if discipline_topic:
@@ -251,7 +278,7 @@ def _collect_topic_matches(lines: list[str], patterns: list[re.Pattern]) -> tupl
     topics: list[str] = []
     sources: list[str] = []
     for line in _merge_topic_lines(lines):
-        if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line) or _looks_like_hours_row(line):
+        if _is_noise(line) or _is_reference_line(line) or _contains_competency_code(line):
             continue
         if _is_section_heading(line):
             continue
@@ -260,11 +287,46 @@ def _collect_topic_matches(lines: list[str], patterns: list[re.Pattern]) -> tupl
             if not match:
                 continue
             candidate = _clean_candidate(match.group(1))
+            candidate = _normalize_topic_title(candidate)
             if _is_reasonable_topic(candidate):
                 topics.append(candidate)
                 sources.append(line)
             break
     return topics, sources
+
+
+def _fallback_topics_from_document(lines: list[str], sections: dict[str, list[str]], raw_lines: list[str]) -> list[str]:
+    candidates: list[str] = []
+    content_lines = sections.get("Содержание дисциплины", []) or []
+    search_lines = [*content_lines, *raw_lines, *lines]
+    in_topic_area = False
+    for line in search_lines:
+        lower = line.lower()
+        if any(marker in lower for marker in TOPIC_HEADER_WORDS):
+            in_topic_area = True
+            continue
+        if any(marker in lower for marker in TOPIC_STOP_MARKERS):
+            in_topic_area = False
+        if not in_topic_area and not re.match(r"^\d+(?:\.\d+)*[\.\)]?\s+", line.strip()):
+            continue
+        candidate = _extract_topic_from_table_like_line(line)
+        if candidate and _is_reasonable_topic(candidate):
+            candidates.append(candidate)
+    if len(candidates) < 5:
+        candidates.extend(_fallback_topics(lines))
+    return _unique_keep_order(candidates)[:20]
+
+
+def _extract_topic_from_table_like_line(line: str) -> str:
+    line = _clean_candidate(line)
+    if not line:
+        return ""
+    line = re.sub(r"^\d+(?:\.\d+)*[\.\)]?\s*", "", line)
+    line = re.sub(r"\s+\d+(?:[.,]\d+)?\s*$", "", line)
+    line = re.sub(r"(?:\s+\d+){2,}$", "", line)
+    line = re.sub(r"\s+\|\s*", " ", line)
+    line = re.sub(r"\b(лекции|практические|лабораторные|самостоятельная|контроль)\b.*$", "", line, flags=re.IGNORECASE)
+    return _normalize_topic_title(line)
 
 
 def _extract_discipline_topic(lines: list[str]) -> str:
@@ -380,10 +442,46 @@ def _extract_learning_outcomes(lines: list[str], sections: dict[str, list[str]] 
 def _extract_outcome_segments(line: str) -> list[str]:
     segments: list[str] = []
     for match in OUTCOME_SEGMENT_PATTERN.finditer(line):
+        verb = match.group(1).strip()
         segment = _clean_candidate(match.group(2))
         if _is_reasonable_outcome(segment):
-            segments.append(segment)
+            segments.append(_normalize_outcome_with_verb(segment, verb=verb))
     return segments
+
+
+def _normalize_learning_outcomes(values: list[str], topics: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    topic_hint = topics[0] if topics else ""
+    for value in values:
+        parts = [part for part in re.split(r"\s*;\s*", value) if part.strip()]
+        for part in parts or [value]:
+            normalized = _normalize_outcome_with_verb(part, topic_hint=topic_hint)
+            key = normalized.lower()
+            if normalized and key not in seen and _is_reasonable_outcome(normalized):
+                seen.add(key)
+                result.append(normalized)
+    return result
+
+
+def _normalize_outcome_with_verb(value: str, verb: str | None = None, topic_hint: str = "") -> str:
+    value = _clean_candidate(value)
+    if not value:
+        return ""
+    lower = value.lower().replace("ё", "е")
+    if any(lower.startswith(f"{action} ") or lower == action for action in ACTION_VERBS):
+        return _capitalize(value)
+    if verb:
+        return _capitalize(f"{verb.lower()} {value}")
+    if lower.startswith(("навыки ", "навыками ", "методами ", "инструментами ", "технологиями ")):
+        return _capitalize(f"владеть {value}")
+    if lower.startswith(("основ", "фактор", "принцип", "понят", "концепц", "структур", "характеристик")):
+        return _capitalize(f"знать {value}")
+    if any(marker in lower for marker in ("html", "css", "javascript", "typescript", "react", "vue", "php", "api", "sql", "компонент", "интерфейс", "прилож")):
+        return _capitalize(f"уметь применять {value}")
+    if topic_hint and _token_overlap_score(value, topic_hint) > 0:
+        return _capitalize(f"уметь применять {value}")
+    return _capitalize(f"знать {value}")
 
 
 def _is_reasonable_outcome(value: str) -> bool:
@@ -409,7 +507,7 @@ def _is_reasonable_discipline_title(value: str) -> bool:
 def _fallback_topics(lines: list[str]) -> list[str]:
     candidates: list[str] = []
     for line in lines:
-        cleaned = _clean_candidate(line)
+        cleaned = _normalize_topic_title(_clean_candidate(line))
         if _is_reasonable_topic(cleaned) and not line.endswith(":") and not _looks_like_hours_row(line):
             candidates.append(cleaned)
     return candidates[:12]
@@ -466,11 +564,13 @@ def _is_reasonable_topic(value: str) -> bool:
     lower = value.lower()
     if _is_noise(value) or _is_reference_line(value) or _is_section_heading(value):
         return False
-    if _contains_competency_code(value) or _contains_indicator_code(value) or _looks_like_hours_row(value):
+    if _contains_competency_code(value) or _contains_indicator_code(value):
         return False
     if any(word in lower for word in ("компетенц", "результат обучения", "итого", "всего", "знать", "уметь", "владеть")):
         return False
     if any(word in lower for word in ("подготовиться", "изучить", "выполнить", "решить", "рассмотреть", "разобрать")):
+        return False
+    if lower in {"лекции", "практические занятия", "самостоятельная работа", "контроль", "зачет", "экзамен"}:
         return False
     return True
 
@@ -481,12 +581,22 @@ def _calculate_quality_score(
     outcomes: list[str],
     sections: list[str],
 ) -> int:
-    score = 0
-    score += min(len(topics) * 4, 40)
-    score += min(len(competencies) * 5, 20)
-    score += min(len(outcomes) * 3, 24)
-    score += min(len(sections) * 4, 16)
+    topic_score = min(len(topics) * 5, 45)
+    competency_score = min(len(competencies) * 5, 20)
+    outcome_score = min(len(outcomes) * 4, 24)
+    section_score = min(len(sections) * 3, 11)
+    score = topic_score + competency_score + outcome_score + section_score
+    if len(topics) >= 6 and competencies and outcomes:
+        score += 5
     return min(score, 100)
+
+
+def _normalize_topic_title(value: str) -> str:
+    value = _clean_candidate(value)
+    value = re.sub(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[\.\)]?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+(?:лекции|практические занятия|лабораторные работы|самостоятельная работа)\s*.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+\d+(?:\s+\d+){1,8}$", "", value)
+    return _clean_candidate(value)
 
 
 def _clean_candidate(value: str) -> str:
@@ -494,6 +604,11 @@ def _clean_candidate(value: str) -> str:
     value = re.sub(r"\|\s*ИД[-–—]?.*$", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+\|\s*\d+\s*(?:\|\s*\d+\s*)+$", "", value)
     return value.strip(" .;:-—|\t")
+
+
+def _capitalize(value: str) -> str:
+    value = _clean_candidate(value)
+    return f"{value[:1].upper()}{value[1:]}" if value else ""
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:
@@ -505,3 +620,21 @@ def _unique_keep_order(values: list[str]) -> list[str]:
             seen.add(key)
             result.append(value.strip())
     return result
+
+
+def _token_overlap_score(left: str, right: str) -> float:
+    left_tokens = set(_extract_key_terms(left))
+    right_tokens = set(_extract_key_terms(right))
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _extract_key_terms(value: str) -> list[str]:
+    tokens = []
+    for token in re.findall(r"[A-Za-zА-Яа-я0-9+#.-]{3,}", (value or "").lower().replace("ё", "е")):
+        token = token.strip(".-_")
+        if not token or token.isdigit():
+            continue
+        tokens.append(token)
+    return tokens

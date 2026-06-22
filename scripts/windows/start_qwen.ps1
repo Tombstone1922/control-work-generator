@@ -45,14 +45,30 @@ if (!$LlamaServer) {
 }
 
 Set-Location $ProjectRoot
-Write-Host "Starting Qwen3 local server..." -ForegroundColor Green
+Write-Host "Starting Qwen3 local server optimized for RTX 5070..." -ForegroundColor Green
 Write-Host "llama-server: $LlamaServer" -ForegroundColor Cyan
 Write-Host "Model:        $ModelPath" -ForegroundColor Cyan
 Write-Host "URL:          http://127.0.0.1:8081/v1" -ForegroundColor Cyan
+Write-Host "Params:       -c 4096 -t 8 -ngl 99 -np 1" -ForegroundColor Cyan
+
+$baseArgs = @(
+    "-m", $ModelPath,
+    "--host", "127.0.0.1",
+    "--port", "8081",
+    "-c", "4096",
+    "-t", "8",
+    "-ngl", "99",
+    "-np", "1"
+)
 
 try {
-    & $LlamaServer -m $ModelPath --host 127.0.0.1 --port 8081 -c 8192 --jinja
+    & $LlamaServer @baseArgs --jinja -fa
 } catch {
-    Write-Host "Failed to start with --jinja. Trying without --jinja..." -ForegroundColor Yellow
-    & $LlamaServer -m $ModelPath --host 127.0.0.1 --port 8081 -c 8192
+    Write-Host "Failed to start with --jinja -fa. Trying without -fa..." -ForegroundColor Yellow
+    try {
+        & $LlamaServer @baseArgs --jinja
+    } catch {
+        Write-Host "Failed to start with --jinja. Trying basic optimized launch..." -ForegroundColor Yellow
+        & $LlamaServer @baseArgs
+    }
 }

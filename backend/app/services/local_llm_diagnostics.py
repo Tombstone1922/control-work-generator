@@ -45,8 +45,8 @@ def check_local_llm() -> LocalLLMDiagnosticsResult:
         )
 
     client = LocalLLMClient(settings)
-    system_prompt = "Верни строго JSON без markdown. Схема: {\"ok\": true, \"text\": \"...\"}."
-    user_prompt = "Проверь связь. Верни JSON с ok=true и коротким текстом: локальная модель доступна."
+    system_prompt = "Верни только JSON. Без markdown, без рассуждений, без пояснений. Схема: {\"ok\": true, \"text\": \"...\"}."
+    user_prompt = "Ответь ровно одной JSON-строкой: {\"ok\":true,\"text\":\"локальная модель доступна\"}"
     started = time.perf_counter()
     data = client.chat_json(system_prompt=system_prompt, user_prompt=user_prompt)
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -59,7 +59,7 @@ def check_local_llm() -> LocalLLMDiagnosticsResult:
             available=False,
             latency_ms=latency_ms,
             json_ok=False,
-            sample_text="",
+            sample_text=client.last_raw_content[:500],
             error="Модель не ответила или вернула невалидный JSON. Проверь llama-server, порт и LOCAL_LLM_BASE_URL.",
         )
 
@@ -86,21 +86,24 @@ def generate_local_llm_sample_task() -> dict:
 
     client = LocalLLMClient(settings)
     system_prompt = """
-Ты вузовский преподаватель. Верни строго JSON без markdown.
-Схема: {"text":"задание","answer":"эталонный ответ","criteria":["критерий"]}
+Верни только валидный JSON. Без markdown, без рассуждений, без пояснений.
+Не используй одинарные кавычки. Не добавляй текст до или после JSON.
+Схема: {"text":"задание","answer":"эталонный ответ","criteria":["критерий 1","критерий 2"]}
 """.strip()
     user_prompt = """
-Сгенерируй одно практическое задание по дисциплине «Разработка веб-приложений».
-Тема: «Компонентный подход во frontend-разработке».
+Сформируй JSON для одного практического задания.
+Дисциплина: Разработка веб-приложений.
+Тема: Компонентный подход во frontend-разработке.
 Контекст: React, Vue, состояние компонента, свойства, обработчики событий, тестирование интерфейса.
-Задание должно быть конкретным и проверяемым.
+Ответ должен быть ровно одним JSON-объектом.
 """.strip()
     data = client.chat_json(system_prompt=system_prompt, user_prompt=user_prompt)
     if not data:
         return {
             "enabled": True,
             "ok": False,
-            "error": "Модель не ответила или вернула невалидный JSON.",
+            "raw_content": client.last_raw_content[:1000],
+            "error": "Модель ответила, но JSON не удалось распознать.",
         }
     return {
         "enabled": True,

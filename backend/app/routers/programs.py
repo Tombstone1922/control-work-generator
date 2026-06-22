@@ -38,8 +38,12 @@ def _sanitize_analysis_topics(analysis: RpdAnalysisResult) -> RpdAnalysisResult:
     cleaned_topics = sanitize_rpd_topics(analysis.topics)
     removed_count = max(raw_count - len(cleaned_topics), 0)
     if removed_count:
-        analysis.diagnostics.warnings.append(f"Очистка тем РПД удалила служебные фрагменты таблиц: {removed_count}.")
+        analysis.diagnostics.warnings.append(f"Очистка тем РПД удалила служебные фрагменты таблиц и вопросы ФОС: {removed_count}.")
+
     analysis.topics = cleaned_topics
+    # topic_sources are shown in UI. Before this fix they kept raw PDF/table fragments
+    # even when the public topics list was already sanitized.
+    analysis.topic_sources = [f"Очищенная тема: {topic}" for topic in cleaned_topics]
     analysis.diagnostics.topics_count = len(cleaned_topics)
     analysis.diagnostics.quality_score = min(
         100,

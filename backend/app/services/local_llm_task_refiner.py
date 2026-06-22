@@ -62,6 +62,8 @@ TYPE_CONTRACTS = {
     "test_bank": "Тестовое задание должно быть проверочным вопросом или мини-задачей с однозначной проверкой. Не превращай его в курсовую или лабораторную.",
 }
 
+DEFAULT_SKIP_TYPES = "oral,exam_questions,credit,test_bank,diagnostic"
+
 
 def refine_items_with_local_llm(
     *,
@@ -87,8 +89,9 @@ def _refine_items_single(
 ) -> tuple[list[AssessmentItemRead], list[str]]:
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
-    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 24, minimum=1, maximum=max(len(items), 1))
+    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
     force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", False)
+    skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
 
     refined: list[AssessmentItemRead] = []
     warnings: list[str] = []
@@ -96,12 +99,20 @@ def _refine_items_single(
     refined_count = 0
     failed_count = 0
     skipped_similar = 0
+    skipped_by_type = 0
+    llm_attempts = 0
 
-    for index, item in enumerate(items):
-        if index >= max_items:
+    for item in items:
+        if _should_skip_item(item, skip_types):
+            refined.append(item)
+            used_texts.append(item.text)
+            skipped_by_type += 1
+            continue
+        if llm_attempts >= max_items:
             refined.append(item)
             used_texts.append(item.text)
             continue
+        llm_attempts += 1
 
         context = get_topic_knowledge_context(
             discipline_name=discipline_name,
@@ -112,7 +123,7 @@ def _refine_items_single(
             item=item,
             discipline_name=discipline_name,
             context=context,
-            used_texts=used_texts[-12:],
+            used_texts=used_texts[-8:],
         )
         data = client.chat_json(system_prompt=SINGLE_SYSTEM_PROMPT, user_prompt=prompt)
         if not data:
@@ -160,7 +171,9 @@ def _refine_items_single(
         refined_count += 1
 
     if refined_count:
-        warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; режим: single; модель: {settings.model}.")
+        warnings.append(f"Локальная LLM улучшила формулировки заданий: {refined_count}; режим: single-fast; модель: {settings.model}.")
+    if skipped_by_type:
+        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {skipped_by_type}.")
     if failed_count:
         warnings.append(f"Локальная LLM не ответила, вернула некорректный JSON или нарушила тип задания: {failed_count}; оставлены базовые задания.")
     if skipped_similar:
@@ -176,9 +189,10 @@ def _refine_items_batch(
 ) -> tuple[list[AssessmentItemRead], list[str]]:
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
-    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 60, minimum=1, maximum=max(len(items), 1))
-    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 6, minimum=1, maximum=10)
+    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 24, minimum=1, maximum=max(len(items), 1))
+    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 4, minimum=1, maximum=10)
     force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
+    skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
 
     refined: list[AssessmentItemRead] = []
     warnings: list[str] = []
@@ -186,10 +200,19 @@ def _refine_items_batch(
     refined_count = 0
     failed_count = 0
     skipped_similar = 0
+    skipped_by_type = 0
     batches_count = 0
 
-    target_items = items[:max_items]
-    tail_items = items[max_items:]
+    target_items: list[AssessmentItemRead] = []
+    tail_items: list[AssessmentItemRead] = []
+    for item in items:
+        if _should_skip_item(item, skip_types):
+            tail_items.append(item)
+            skipped_by_type += 1
+        elif len(target_items) < max_items:
+            target_items.append(item)
+        else:
+            tail_items.append(item)
 
     for batch_start in range(0, len(target_items), batch_size):
         batch = target_items[batch_start : batch_start + batch_size]
@@ -198,7 +221,7 @@ def _refine_items_batch(
             batch_start=batch_start,
             discipline_name=discipline_name,
             all_topics=all_topics,
-            used_texts=used_texts[-18:],
+            used_texts=used_texts[-12:],
         )
         data = client.chat_json(system_prompt=BATCH_SYSTEM_PROMPT, user_prompt=prompt)
         batches_count += 1
@@ -261,8 +284,10 @@ def _refine_items_batch(
     if refined_count:
         warnings.append(
             f"Локальная LLM агрессивно улучшила формулировки заданий: {refined_count}; "
-            f"режим: batch; пакетов: {batches_count}; модель: {settings.model}."
+            f"режим: batch-fast; пакетов: {batches_count}; модель: {settings.model}."
         )
+    if skipped_by_type:
+        warnings.append(f"Локальная LLM пропустила быстрые типы заданий без потери качества: {skipped_by_type}.")
     if failed_count:
         warnings.append(
             f"Локальная LLM не вернула корректный JSON или нарушила тип задания: {failed_count}; "
@@ -282,27 +307,27 @@ def _build_single_prompt(*, item: AssessmentItemRead, discipline_name: str, cont
         "type_contract": _type_contract(item.assessment_type, item.item_type),
         "difficulty": item.difficulty,
         "competency_code": item.competency_code,
-        "indicator": item.indicator,
+        "indicator": _trim(item.indicator, 220),
         "base_task": {
-            "text": item.text,
-            "answer": item.answer,
-            "criteria": item.criteria,
+            "text": _trim(item.text, 520),
+            "answer": _trim(item.answer, 260),
+            "criteria": item.criteria[:4],
         },
         "knowledge_context": {
             "profile_name": context.profile_name,
-            "related_topics": context.related_topics,
-            "learning_outcomes": context.learning_outcomes,
-            "competencies": context.competencies,
-            "key_terms": context.key_terms,
+            "related_topics": context.related_topics[:4],
+            "learning_outcomes": [_trim(value, 180) for value in context.learning_outcomes[:3]],
+            "competencies": context.competencies[:4],
+            "key_terms": context.key_terms[:8],
             "source": context.source,
         },
-        "already_created_tasks_do_not_repeat": used_texts,
+        "already_created_tasks_do_not_repeat": [_trim(value, 220) for value in used_texts],
         "requirements": [
             "Строго соблюдай type_contract.",
             "Сделай формулировку конкретной для темы и дисциплины.",
             "Не смешивай жанры: устный вопрос не должен быть практическим заданием, курсовая не должна быть обычным заданием.",
-            "Для практических заданий добавь проверяемый результат: артефакт, расчёт, фрагмент кода, чек-лист, схема, SQL-запрос, тест-кейс или анализ кейса — в зависимости от темы.",
-            "Ответ и критерии должны соответствовать именно этому типу задания.",
+            "Ответ сделай кратким, без длинной лекции.",
+            "Критерии сделай короткими и проверяемыми.",
             "Верни только JSON по схеме из system prompt.",
         ],
     }
@@ -332,32 +357,32 @@ def _build_batch_prompt(
             "type_contract": _type_contract(item.assessment_type, item.item_type),
             "difficulty": item.difficulty,
             "competency_code": item.competency_code,
-            "indicator": _trim(item.indicator, 260),
+            "indicator": _trim(item.indicator, 180),
             "base_task": {
-                "text": _trim(item.text, 420),
-                "answer": _trim(item.answer, 260),
-                "criteria": item.criteria[:4],
+                "text": _trim(item.text, 340),
+                "answer": _trim(item.answer, 180),
+                "criteria": item.criteria[:3],
             },
             "knowledge_context": {
                 "profile_name": context.profile_name,
-                "related_topics": context.related_topics[:4],
-                "learning_outcomes": [_trim(value, 180) for value in context.learning_outcomes[:3]],
-                "competencies": context.competencies[:4],
-                "key_terms": context.key_terms[:8],
+                "related_topics": context.related_topics[:3],
+                "learning_outcomes": [_trim(value, 140) for value in context.learning_outcomes[:2]],
+                "competencies": context.competencies[:3],
+                "key_terms": context.key_terms[:6],
                 "source": context.source,
             },
         })
 
     payload = {
         "discipline_name": discipline_name,
-        "already_created_tasks_do_not_repeat": [_trim(value, 260) for value in used_texts],
+        "already_created_tasks_do_not_repeat": [_trim(value, 180) for value in used_texts],
         "items": payload_items,
         "requirements": [
             "Строго соблюдай type_contract для каждого item.",
             "Не смешивай жанры: oral/exam/credit — это вопрос; practice/laboratory — практическое выполнение; coursework/course_project — тема курсовой.",
             "Перепиши каждое задание сильнее базового варианта, но не меняй его тип.",
             "Для каждого входного item верни один выходной item с тем же index.",
-            "Ответ и критерии должны соответствовать типу задания.",
+            "Ответ и критерии должны быть краткими.",
             "Верни только JSON по схеме из system prompt.",
         ],
     }
@@ -392,7 +417,7 @@ def _sanitize_llm_result(data: dict) -> dict | None:
     criteria = [_clean_text(item) for item in criteria_raw if _clean_text(item)]
     uniqueness_reason = _clean_text(data.get("uniqueness_reason"))
 
-    if len(text) < 30 or len(text) > 1400:
+    if len(text) < 30 or len(text) > 1200:
         return None
     if len(answer) < 15:
         return None
@@ -403,7 +428,7 @@ def _sanitize_llm_result(data: dict) -> dict | None:
     return {
         "text": text,
         "answer": answer,
-        "criteria": criteria[:5],
+        "criteria": criteria[:4],
         "uniqueness_reason": uniqueness_reason,
     }
 
@@ -427,6 +452,14 @@ def _matches_type_contract(text: str, assessment_type: str, item_type: str) -> b
     if assessment_type == "control_work":
         return lower.startswith("контрольное задание") or "контрольн" in lower[:140]
     return True
+
+
+def _should_skip_item(item: AssessmentItemRead, skip_types: set[str]) -> bool:
+    if item.assessment_type in skip_types:
+        return True
+    if item.item_type in skip_types:
+        return True
+    return False
 
 
 def _clean_text(value) -> str:
@@ -477,3 +510,8 @@ def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     except ValueError:
         value = default
     return max(minimum, min(maximum, value))
+
+
+def _env_set(name: str, default_csv: str) -> set[str]:
+    value = os.getenv(name, default_csv)
+    return {part.strip() for part in value.split(",") if part.strip()}

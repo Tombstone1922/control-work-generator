@@ -34,13 +34,14 @@ $settings = @{
     "LOCAL_LLM_ENABLED" = "true"
     "LOCAL_LLM_BASE_URL" = "http://127.0.0.1:8081/v1"
     "LOCAL_LLM_MODEL" = "qwen3-14b-instruct-q4_k_m"
-    "LOCAL_LLM_TIMEOUT_SECONDS" = "180"
+    "LOCAL_LLM_TIMEOUT_SECONDS" = "90"
     "LOCAL_LLM_TEMPERATURE" = "0.2"
-    "LOCAL_LLM_MAX_TOKENS" = "900"
-    "LOCAL_LLM_MAX_ITEMS" = "24"
+    "LOCAL_LLM_MAX_TOKENS" = "650"
+    "LOCAL_LLM_MAX_ITEMS" = "10"
     "LOCAL_LLM_REFINEMENT_MODE" = "single"
-    "LOCAL_LLM_BATCH_SIZE" = "6"
+    "LOCAL_LLM_BATCH_SIZE" = "4"
     "LOCAL_LLM_FORCE_REWRITE" = "false"
+    "LOCAL_LLM_SKIP_TYPES" = "oral,exam_questions,credit,test_bank,diagnostic"
 }
 
 foreach ($key in $settings.Keys) {
@@ -55,7 +56,7 @@ foreach ($key in $settings.Keys) {
 
 Set-Content -Path $EnvPath -Value $envContent -Encoding UTF8
 
-Write-Host "Configured backend .env for quality Qwen single-item refinement: $ProjectRoot" -ForegroundColor Green
-Write-Host "For faster batch mode, set LOCAL_LLM_REFINEMENT_MODE=batch in backend\.env" -ForegroundColor Yellow
+Write-Host "Configured backend .env for fast Qwen refinement: $ProjectRoot" -ForegroundColor Green
+Write-Host "Qwen will refine up to 10 high-impact tasks and skip oral/test/diagnostic items for speed." -ForegroundColor Yellow
 Write-Host "Put Qwen model here:" -ForegroundColor Cyan
 Write-Host "  $ModelsDir\Qwen3-14B-Q4_K_M.gguf" -ForegroundColor Cyan

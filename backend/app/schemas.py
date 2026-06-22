@@ -184,6 +184,7 @@ class AssessmentItemsGenerateResponse(BaseModel):
     template_generated_items: int = 0
     model_version: str = ""
     warnings: List[str] = Field(default_factory=list)
+    profiling: dict = Field(default_factory=dict)
 
 
 class TrainingExampleCreateRequest(BaseModel):
@@ -257,16 +258,3 @@ class GenerationResponse(BaseModel):
     status: str = "generated"
     review_comment: str = ""
     reviewed_by_user_id: str | None = None
-
-
-class GenerationUpdateRequest(BaseModel):
-    variants: List[ControlWorkVariant]
-
-
-class GenerationStatusUpdateRequest(BaseModel):
-    status: str
-    review_comment: str = ""
-
-
-class ErrorResponse(BaseModel):
-    detail: str

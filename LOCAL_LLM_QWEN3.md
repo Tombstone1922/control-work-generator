@@ -1,59 +1,215 @@
-# Local Qwen3 integration
+# Локальная Qwen3 для генерации ФОС
 
-The project can optionally use a local OpenAI-compatible LLM server as a pedagogical refiner for generated assessment items.
-
-Recommended model for a 32 GB RAM laptop:
-
-- Qwen3-14B-Instruct GGUF, quantization Q4_K_M or close equivalent.
-
-The model file is not stored in GitHub. Put the downloaded GGUF file into a local folder, for example:
+Эта инструкция для случая, когда файл модели уже скачан:
 
 ```text
-backend/storage/models/qwen3-14b-instruct-q4_k_m.gguf
+Qwen3-14B-Q4_K_M.gguf
 ```
 
-## Run llama.cpp server
+Модель не хранится в GitHub. Она должна лежать только локально на компьютере.
 
-Example command:
+## 1. Куда положить модель
+
+Открой корень проекта:
 
 ```powershell
-llama-server -m backend/storage/models/qwen3-14b-instruct-q4_k_m.gguf --host 127.0.0.1 --port 8081 -c 8192 --jinja
+cd F:\projects\mutexborschveskii\control-work-generator
 ```
 
-If the server build does not support `--jinja`, run without it:
+Создай папку для моделей, если ее нет:
 
 ```powershell
-llama-server -m backend/storage/models/qwen3-14b-instruct-q4_k_m.gguf --host 127.0.0.1 --port 8081 -c 8192
+mkdir backend\storage\models
 ```
 
-## Enable the local LLM in backend
+Положи файл модели сюда:
 
-Edit `backend/.env`:
+```text
+F:\projects\mutexborschveskii\control-work-generator\backend\storage\models\Qwen3-14B-Q4_K_M.gguf
+```
+
+Проверить, что файл на месте:
+
+```powershell
+dir backend\storage\models
+```
+
+В списке должен быть файл:
+
+```text
+Qwen3-14B-Q4_K_M.gguf
+```
+
+## 2. Установить llama.cpp
+
+Попробуй через winget:
+
+```powershell
+winget install llama.cpp
+```
+
+После установки закрой PowerShell и открой новый терминал, затем проверь:
+
+```powershell
+llama-server --version
+```
+
+Если команда не находится, значит `llama-server` не добавился в PATH. Тогда нужно либо перезагрузить терминал/Windows, либо запускать `llama-server.exe` из папки установки.
+
+## 3. Запустить локальный сервер модели
+
+Из корня проекта:
+
+```powershell
+cd F:\projects\mutexborschveskii\control-work-generator
+```
+
+Запусти модель:
+
+```powershell
+llama-server -m backend\storage\models\Qwen3-14B-Q4_K_M.gguf --host 127.0.0.1 --port 8081 -c 8192 --jinja
+```
+
+Если появилась ошибка про неизвестный параметр `--jinja`, запусти без него:
+
+```powershell
+llama-server -m backend\storage\models\Qwen3-14B-Q4_K_M.gguf --host 127.0.0.1 --port 8081 -c 8192
+```
+
+Если ноутбук начинает сильно тормозить, можно уменьшить контекст:
+
+```powershell
+llama-server -m backend\storage\models\Qwen3-14B-Q4_K_M.gguf --host 127.0.0.1 --port 8081 -c 4096
+```
+
+Окно с `llama-server` не закрывать. Это отдельный процесс модели.
+
+## 4. Проверить, что сервер отвечает
+
+Открой второй PowerShell и выполни:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8081/v1/models
+```
+
+Если сервер работает, будет JSON-ответ со списком моделей.
+
+## 5. Включить локальную LLM в backend
+
+Открой файл:
+
+```text
+backend\.env
+```
+
+Добавь или измени строки:
 
 ```env
 LOCAL_LLM_ENABLED=true
 LOCAL_LLM_BASE_URL=http://127.0.0.1:8081/v1
 LOCAL_LLM_MODEL=qwen3-14b-instruct-q4_k_m
-LOCAL_LLM_TIMEOUT_SECONDS=90
+LOCAL_LLM_TIMEOUT_SECONDS=120
 LOCAL_LLM_TEMPERATURE=0.2
 LOCAL_LLM_MAX_TOKENS=900
 LOCAL_LLM_MAX_ITEMS=24
 ```
 
-Then restart the backend:
+Важно: `LOCAL_LLM_MODEL` — это внутреннее имя для запроса. Сам файл модели может называться `Qwen3-14B-Q4_K_M.gguf`.
+
+Если файла `backend\.env` нет, скопируй пример:
 
 ```powershell
-cd backend
+copy backend\.env.example backend\.env
+```
+
+И потом добавь строки выше.
+
+## 6. Перезапустить backend
+
+В отдельном PowerShell:
+
+```powershell
+cd F:\projects\mutexborschveskii\control-work-generator\backend
 .\.venv\Scripts\activate
 python run.py
 ```
 
-## Generation pipeline with local LLM
+Backend должен стартовать без ошибок.
 
-1. The rule/context generator creates assessment items from RPD topics and the discipline knowledge catalog.
-2. The narrow generator uses OM corpus and teacher-approved examples.
-3. The local LLM refiner improves a limited number of generated items using discipline context.
-4. The postprocessor removes noisy fragments, rebuilds generic items and enforces uniqueness.
-5. The validator checks topic coverage, competency coverage, answers, criteria and strong duplicates.
+## 7. Проверить интеграцию из backend
 
-The backend does not fail if the local LLM server is unavailable. It simply keeps the base generated items and adds a warning when refinement fails.
+В еще одном PowerShell:
+
+```powershell
+cd F:\projects\mutexborschveskii\control-work-generator\backend
+.\.venv\Scripts\activate
+python -m app.tools.test_local_llm
+```
+
+Нормальный результат должен быть примерно такой:
+
+```json
+{
+  "enabled": true,
+  "available": true,
+  "json_ok": true,
+  "model": "qwen3-14b-instruct-q4_k_m"
+}
+```
+
+Если `available=false`, проверь:
+
+1. запущен ли `llama-server`;
+2. совпадает ли порт `8081`;
+3. стоит ли `LOCAL_LLM_ENABLED=true`;
+4. не закрыто ли окно с моделью;
+5. не заблокировал ли Windows Firewall локальный сервер.
+
+## 8. Проверить из интерфейса
+
+Запусти frontend:
+
+```powershell
+cd F:\projects\mutexborschveskii\control-work-generator\frontend
+npm run dev
+```
+
+В интерфейсе открой ФОС и банк заданий. Визуально основной блок теперь называется `Context-module`, потому что для ВКР мы показываем объяснимый контекст генерации. Qwen работает внутри как дополнительный LLM-refiner, если включен в `.env`.
+
+## 9. Как понять, что Qwen реально сработала
+
+После генерации в предупреждениях может появиться сообщение:
+
+```text
+Локальная LLM улучшила формулировки заданий: ...; модель: qwen3-14b-instruct-q4_k_m.
+```
+
+Также у части заданий источник может быть:
+
+```text
+LLM-refiner
+```
+
+Если такого нет, но генерация прошла, значит система работала через context-module, базу знаний и антидубли без LLM-редактора.
+
+## 10. Рекомендуемый порядок запуска каждый раз
+
+1. Запустить `llama-server`.
+2. Запустить backend `python run.py`.
+3. Запустить frontend `npm run dev`.
+4. Открыть интерфейс и генерировать задания.
+
+## 11. Важное по GitHub
+
+Файлы моделей нельзя коммитить. В `.gitignore` уже добавлены:
+
+```text
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+backend/storage/models/*
+```
+
+Если GitHub Desktop вдруг покажет модель в изменениях, не коммить ее.

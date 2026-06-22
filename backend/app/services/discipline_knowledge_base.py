@@ -17,6 +17,13 @@ STOP_TERMS = {
     "лекция", "практика", "занятие", "самостоятельная", "работа", "изучение", "изучения",
 }
 
+ACTION_VERBS = (
+    "знать", "уметь", "владеть", "понимать", "применять", "использовать", "анализировать",
+    "оценивать", "разрабатывать", "создавать", "проектировать", "реализовывать", "формировать",
+    "выбирать", "обосновывать", "настраивать", "тестировать", "отлаживать", "оптимизировать",
+    "составлять", "строить", "определять", "выявлять", "сравнивать", "классифицировать",
+)
+
 
 @dataclass
 class TopicKnowledgeContext:
@@ -39,7 +46,8 @@ def get_topic_knowledge_context(
     profile = _find_profile(discipline_name, topic, all_topics or [])
     if profile:
         related_topics = _pick_related_topics(topic, profile.get("topics", []), all_topics or [])
-        outcomes = [str(value).strip() for value in profile.get("learning_outcomes", []) if str(value).strip()]
+        raw_outcomes = [str(value).strip() for value in profile.get("learning_outcomes", []) if str(value).strip()]
+        outcomes = _normalize_learning_outcomes(raw_outcomes, topic=topic)[:4]
         competencies = [str(value).strip() for value in profile.get("competencies", []) if str(value).strip()]
         key_terms = _extract_key_terms(" ".join([topic, " ".join(related_topics), " ".join(outcomes), " ".join(profile.get("tokens", []))]))
         return TopicKnowledgeContext(
@@ -47,7 +55,7 @@ def get_topic_knowledge_context(
             topic=topic,
             profile_name=profile.get("discipline_name", ""),
             related_topics=related_topics[:5],
-            learning_outcomes=outcomes[:4],
+            learning_outcomes=outcomes,
             competencies=competencies[:8],
             key_terms=key_terms[:8],
             source="discipline_catalog",
@@ -59,7 +67,7 @@ def get_topic_knowledge_context(
         topic=topic,
         profile_name=discipline_name,
         related_topics=related[:5],
-        learning_outcomes=[],
+        learning_outcomes=_fallback_learning_outcomes(topic),
         competencies=[],
         key_terms=_extract_key_terms(" ".join([discipline_name, topic, " ".join(related)]))[:8],
         source="runtime_topics",
@@ -126,6 +134,84 @@ def _pick_related_topics(topic: str, profile_topics: list[str], runtime_topics: 
         seen.add(key)
         result.append(value)
     return result
+
+
+def _normalize_learning_outcomes(values: list[str], *, topic: str) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for part in _split_outcome(value):
+            normalized = _normalize_learning_outcome(part, topic=topic)
+            key = _normalize(normalized)
+            if not normalized or key in seen:
+                continue
+            seen.add(key)
+            result.append(normalized)
+    return result or _fallback_learning_outcomes(topic)
+
+
+def _split_outcome(value: str) -> list[str]:
+    value = _clean_sentence(value)
+    if not value:
+        return []
+    parts = re.split(r"\s*;\s*", value)
+    cleaned = [_clean_sentence(part) for part in parts if _clean_sentence(part)]
+    return cleaned or [value]
+
+
+def _normalize_learning_outcome(value: str, *, topic: str) -> str:
+    value = _clean_sentence(value)
+    if not value:
+        return ""
+    lower = value.lower().replace("ё", "е")
+
+    if _starts_with_action_verb(lower):
+        return _capitalize_sentence(value)
+
+    if lower.startswith(("навыки ", "навыками ", "методами ", "инструментами ", "технологиями ")):
+        return _capitalize_sentence(f"Владеть {value}")
+
+    if any(marker in lower for marker in ("интерфейс", "прилож", "api", "html", "css", "javascript", "typescript", "react", "vue", "php", "sql", "компонент", "тест")):
+        if lower.startswith(("основ", "фактор", "принцип", "понят", "концепц", "архитектур")):
+            return _capitalize_sentence(f"Знать {value}")
+        return _capitalize_sentence(f"Уметь применять {value}")
+
+    if lower.startswith(("основ", "фактор", "принцип", "понят", "концепц", "классификац", "характеристик", "структур")):
+        return _capitalize_sentence(f"Знать {value}")
+
+    if lower.startswith(("метод", "способ", "алгоритм", "подход", "практик", "прием")):
+        return _capitalize_sentence(f"Применять {value}")
+
+    if topic and _token_overlap_score(value, topic) > 0.0:
+        return _capitalize_sentence(f"Уметь применять {value}")
+
+    return _capitalize_sentence(f"Знать {value}")
+
+
+def _fallback_learning_outcomes(topic: str) -> list[str]:
+    topic = _clean_sentence(topic)
+    if not topic:
+        return []
+    return [
+        f"Знать основные понятия и принципы по теме «{topic}»",
+        f"Уметь применять методы и инструменты по теме «{topic}» при решении учебных задач",
+        f"Владеть навыками анализа и проверки решений по теме «{topic}»",
+    ]
+
+
+def _starts_with_action_verb(value: str) -> bool:
+    return any(value.startswith(f"{verb} ") or value == verb for verb in ACTION_VERBS)
+
+
+def _clean_sentence(value: str) -> str:
+    value = str(value or "").replace("#default#", "")
+    value = re.sub(r"\s+", " ", value).strip(" .;:-—\t\n\r")
+    return value
+
+
+def _capitalize_sentence(value: str) -> str:
+    value = _clean_sentence(value)
+    return f"{value[:1].upper()}{value[1:]}" if value else ""
 
 
 def _extract_key_terms(value: str) -> list[str]:

@@ -258,3 +258,12 @@ class GenerationResponse(BaseModel):
     status: str = "generated"
     review_comment: str = ""
     reviewed_by_user_id: str | None = None
+
+
+class GenerationUpdateRequest(BaseModel):
+    variants: List[ControlWorkVariant]
+
+
+class GenerationStatusUpdateRequest(BaseModel):
+    status: str
+    review_comment: str = ""

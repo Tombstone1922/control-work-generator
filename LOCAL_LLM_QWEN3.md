@@ -1,6 +1,12 @@
 # Локальная Qwen3 для генерации ФОС
 
-Эта инструкция для случая, когда файл модели уже скачан:
+Актуальный путь проекта на ПК:
+
+```text
+C:\projects\control-work-generator
+```
+
+Файл модели:
 
 ```text
 Qwen3-14B-Q4_K_M.gguf
@@ -8,12 +14,107 @@ Qwen3-14B-Q4_K_M.gguf
 
 Модель не хранится в GitHub. Она должна лежать только локально на компьютере.
 
+## Быстрый вариант через готовые скрипты
+
+После `git pull` в проекте будут Windows-скрипты:
+
+```text
+scripts\windows\setup_c_project_env.ps1
+scripts\windows\start_qwen.ps1
+scripts\windows\start_backend.ps1
+scripts\windows\start_frontend.ps1
+scripts\windows\check_local_llm.ps1
+```
+
+### 1. Положить модель
+
+Положи файл сюда:
+
+```text
+C:\projects\control-work-generator\backend\storage\models\Qwen3-14B-Q4_K_M.gguf
+```
+
+### 2. Настроить `.env`
+
+Из корня проекта:
+
+```powershell
+cd C:\projects\control-work-generator
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup_c_project_env.ps1
+```
+
+Скрипт создаст или обновит:
+
+```text
+backend\.env
+```
+
+и пропишет настройки локальной LLM.
+
+### 3. Запустить Qwen
+
+В отдельном PowerShell:
+
+```powershell
+cd C:\projects\control-work-generator
+powershell -ExecutionPolicy Bypass -File scripts\windows\start_qwen.ps1
+```
+
+Окно не закрывать. Это процесс модели.
+
+Если `start_qwen.ps1` ругнется на `--jinja`, запусти вручную без него:
+
+```powershell
+cd C:\projects\control-work-generator
+llama-server -m backend\storage\models\Qwen3-14B-Q4_K_M.gguf --host 127.0.0.1 --port 8081 -c 8192
+```
+
+### 4. Запустить backend
+
+Во втором PowerShell:
+
+```powershell
+cd C:\projects\control-work-generator
+powershell -ExecutionPolicy Bypass -File scripts\windows\start_backend.ps1
+```
+
+### 5. Запустить frontend
+
+В третьем PowerShell:
+
+```powershell
+cd C:\projects\control-work-generator
+powershell -ExecutionPolicy Bypass -File scripts\windows\start_frontend.ps1
+```
+
+### 6. Проверить LLM
+
+В четвертом PowerShell:
+
+```powershell
+cd C:\projects\control-work-generator
+powershell -ExecutionPolicy Bypass -File scripts\windows\check_local_llm.ps1
+```
+
+Нормальный результат:
+
+```json
+{
+  "enabled": true,
+  "available": true,
+  "json_ok": true,
+  "model": "qwen3-14b-instruct-q4_k_m"
+}
+```
+
+## Ручной вариант
+
 ## 1. Куда положить модель
 
 Открой корень проекта:
 
 ```powershell
-cd F:\projects\mutexborschveskii\control-work-generator
+cd C:\projects\control-work-generator
 ```
 
 Создай папку для моделей, если ее нет:
@@ -25,7 +126,7 @@ mkdir backend\storage\models
 Положи файл модели сюда:
 
 ```text
-F:\projects\mutexborschveskii\control-work-generator\backend\storage\models\Qwen3-14B-Q4_K_M.gguf
+C:\projects\control-work-generator\backend\storage\models\Qwen3-14B-Q4_K_M.gguf
 ```
 
 Проверить, что файл на месте:
@@ -61,7 +162,7 @@ llama-server --version
 Из корня проекта:
 
 ```powershell
-cd F:\projects\mutexborschveskii\control-work-generator
+cd C:\projects\control-work-generator
 ```
 
 Запусти модель:
@@ -129,7 +230,7 @@ copy backend\.env.example backend\.env
 В отдельном PowerShell:
 
 ```powershell
-cd F:\projects\mutexborschveskii\control-work-generator\backend
+cd C:\projects\control-work-generator\backend
 .\.venv\Scripts\activate
 python run.py
 ```
@@ -141,7 +242,7 @@ Backend должен стартовать без ошибок.
 В еще одном PowerShell:
 
 ```powershell
-cd F:\projects\mutexborschveskii\control-work-generator\backend
+cd C:\projects\control-work-generator\backend
 .\.venv\Scripts\activate
 python -m app.tools.test_local_llm
 ```
@@ -170,7 +271,7 @@ python -m app.tools.test_local_llm
 Запусти frontend:
 
 ```powershell
-cd F:\projects\mutexborschveskii\control-work-generator\frontend
+cd C:\projects\control-work-generator\frontend
 npm run dev
 ```
 
@@ -194,9 +295,9 @@ LLM-refiner
 
 ## 10. Рекомендуемый порядок запуска каждый раз
 
-1. Запустить `llama-server`.
-2. Запустить backend `python run.py`.
-3. Запустить frontend `npm run dev`.
+1. Запустить `llama-server` или `scripts\windows\start_qwen.ps1`.
+2. Запустить backend или `scripts\windows\start_backend.ps1`.
+3. Запустить frontend или `scripts\windows\start_frontend.ps1`.
 4. Открыть интерфейс и генерировать задания.
 
 ## 11. Важное по GitHub

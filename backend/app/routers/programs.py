@@ -19,6 +19,7 @@ from app.services.discipline_catalog import enrich_analysis_with_catalog
 from app.services.discipline_profile import enrich_analysis_with_discipline_profile
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
+from app.services.rpd_topic_sanitizer import sanitize_rpd_topics
 
 router = APIRouter(prefix="/api/programs", tags=["programs"])
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
@@ -28,7 +29,26 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
     analysis = analyze_rpd_text(text)
     analysis = enrich_analysis_with_discipline_profile(filename, text, analysis)
-    return enrich_analysis_with_catalog(filename, text, analysis)
+    analysis = enrich_analysis_with_catalog(filename, text, analysis)
+    return _sanitize_analysis_topics(analysis)
+
+
+def _sanitize_analysis_topics(analysis: RpdAnalysisResult) -> RpdAnalysisResult:
+    raw_count = len(analysis.topics)
+    cleaned_topics = sanitize_rpd_topics(analysis.topics)
+    removed_count = max(raw_count - len(cleaned_topics), 0)
+    if removed_count:
+        analysis.diagnostics.warnings.append(f"Очистка тем РПД удалила служебные фрагменты таблиц: {removed_count}.")
+    analysis.topics = cleaned_topics
+    analysis.diagnostics.topics_count = len(cleaned_topics)
+    analysis.diagnostics.quality_score = min(
+        100,
+        min(len(cleaned_topics) * 5, 45)
+        + min(len(analysis.competencies) * 5, 20)
+        + min(len(analysis.learning_outcomes) * 4, 24)
+        + min(len(analysis.detected_sections) * 3, 11),
+    )
+    return analysis
 
 
 def _build_program_schema(program_id: str, filename: str, text: str, analysis: RpdAnalysisResult) -> ProgramAnalysis:

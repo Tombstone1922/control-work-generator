@@ -5,6 +5,7 @@ import './styles.css';
 import './analysis.css';
 import './fos.css';
 import './item-bank.css';
+import './compact-generation.css';
 import './competency-editor.css';
 
 createRoot(document.getElementById('root')).render(

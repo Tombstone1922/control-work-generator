@@ -29,6 +29,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   const [disciplineName, setDisciplineName] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showCompetencyMatrix, setShowCompetencyMatrix] = useState(false);
+  const [showFosSections, setShowFosSections] = useState(false);
   const [expandedPlanSections, setExpandedPlanSections] = useState({});
 
   const validation = fund?.validation || {};
@@ -44,6 +45,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     setDisciplineName('');
     setHasUnsavedChanges(false);
     setShowCompetencyMatrix(false);
+    setShowFosSections(false);
     setExpandedPlanSections({});
   }, [program?.program_id]);
 
@@ -79,6 +81,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
       setShowCompetencyMatrix(false);
+      setShowFosSections(false);
       setExpandedPlanSections({});
       await loadFunds();
       setSuccess('Структура ФОС сформирована на основании выбранной РПД.');
@@ -97,6 +100,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
       setShowCompetencyMatrix(false);
+      setShowFosSections(false);
       setExpandedPlanSections({});
       return response.data;
     } catch (err) {
@@ -123,6 +127,10 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
 
   function togglePlanSection(sectionCode) {
     setExpandedPlanSections((current) => ({ ...current, [sectionCode]: !current[sectionCode] }));
+  }
+
+  function toggleFosSections() {
+    setShowFosSections((current) => !current);
   }
 
   function updateTitle(value) {
@@ -262,62 +270,72 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             </div>
           )}
 
-          <div className="fosWorkspace">
-            <div className="fosWorkspaceHeader">
+          <div className={`fosWorkspace ${showFosSections ? 'fosWorkspaceOpen' : ''}`}>
+            <button className="fosAccordionHeader" type="button" onClick={toggleFosSections} aria-expanded={showFosSections}>
               <div>
                 <h3>Разделы ФОС</h3>
-                <p className="muted">Вертикальный список удобнее для настройки: можно быстро пройти разделы сверху вниз и задать план заданий.</p>
+                <p className="muted">{enabledSections.length} активных разделов · {generatedItems} заданий · настройка разделов скрыта для экономии места.</p>
               </div>
-              <button className="secondary" type="button" onClick={() => setShowCompetencyMatrix((value) => !value)}>
-                {showCompetencyMatrix ? 'Скрыть матрицу компетенций' : 'Показать матрицу компетенций'}
-              </button>
-            </div>
+              <span>{showFosSections ? 'Свернуть' : 'Открыть'}</span>
+            </button>
 
-            {showCompetencyMatrix && (
-              <div className="competencyDrawer">
-                <CompetencyMatrixEditor
-                  api={api}
-                  fund={fund}
-                  setFund={setFund}
-                  setError={setError}
-                  setSuccess={setSuccess}
-                  onFundRefresh={refreshCurrentFund}
-                />
+            <div className={`fosAccordionBody ${showFosSections ? 'fosAccordionBodyOpen' : ''}`}>
+              <div className="fosWorkspaceHeader">
+                <div>
+                  <h3>Настройка разделов</h3>
+                  <p className="muted">Можно быстро пройти разделы сверху вниз, включить нужные блоки и задать план заданий.</p>
+                </div>
+                <button className="secondary" type="button" onClick={() => setShowCompetencyMatrix((value) => !value)}>
+                  {showCompetencyMatrix ? 'Скрыть матрицу компетенций' : 'Показать матрицу компетенций'}
+                </button>
               </div>
-            )}
 
-            <div className="fosSections">
-              {fund.sections.map((section) => {
-                const isPlanOpen = Boolean(expandedPlanSections[section.code]);
-                return (
-                  <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
-                    <div className="questionTopline">
-                      <div>
-                        <strong>{section.title}</strong>
-                        <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
+              {showCompetencyMatrix && (
+                <div className="competencyDrawer">
+                  <CompetencyMatrixEditor
+                    api={api}
+                    fund={fund}
+                    setFund={setFund}
+                    setError={setError}
+                    setSuccess={setSuccess}
+                    onFundRefresh={refreshCurrentFund}
+                  />
+                </div>
+              )}
+
+              <div className="fosSections">
+                {fund.sections.map((section) => {
+                  const isPlanOpen = Boolean(expandedPlanSections[section.code]);
+                  return (
+                    <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
+                      <div className="questionTopline">
+                        <div>
+                          <strong>{section.title}</strong>
+                          <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
+                        </div>
+                        <label className="toggleLabel">
+                          <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
+                          Включить
+                        </label>
                       </div>
-                      <label className="toggleLabel">
-                        <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
-                        Включить
-                      </label>
-                    </div>
-                    <p className="muted">{section.description}</p>
-                    <div className="fosSectionMetaCompact">
-                      <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
-                      <button className="planToggleButton" type="button" onClick={() => togglePlanSection(section.code)} aria-expanded={isPlanOpen}>
-                        <span>План: {section.planned_items}</span>
-                        <strong>{isPlanOpen ? 'Скрыть' : 'Изменить'}</strong>
-                      </button>
-                    </div>
-                    <div className={`plannedItemsPanel ${isPlanOpen ? 'plannedItemsPanelOpen' : ''}`}>
-                      <label>
-                        План заданий для раздела
-                        <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
-                      </label>
-                    </div>
-                  </article>
-                );
-              })}
+                      <p className="muted">{section.description}</p>
+                      <div className="fosSectionMetaCompact">
+                        <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
+                        <button className="planToggleButton" type="button" onClick={() => togglePlanSection(section.code)} aria-expanded={isPlanOpen}>
+                          <span>План: {section.planned_items}</span>
+                          <strong>{isPlanOpen ? 'Скрыть' : 'Изменить'}</strong>
+                        </button>
+                      </div>
+                      <div className={`plannedItemsPanel ${isPlanOpen ? 'plannedItemsPanelOpen' : ''}`}>
+                        <label>
+                          План заданий для раздела
+                          <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
+                        </label>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

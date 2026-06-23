@@ -6,9 +6,12 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from app.repositories import (
+    get_generation_entity_for_user,
     get_generation_for_user,
+    get_program_entity_for_user,
     get_program_for_user,
     list_generations_for_user,
+    program_to_schema,
     save_generation,
     update_generation_status,
     update_generation_variants,
@@ -22,6 +25,12 @@ from app.schemas import (
 from app.security import get_current_user
 from app.services.question_generator import generate_question, generate_variants
 from app.services.quality_checker import build_quality_report
+from app.services.role_policy import (
+    ensure_can_edit_generation_content,
+    ensure_can_edit_program_content,
+    is_reviewer,
+    require_teacher_or_admin,
+)
 
 router = APIRouter(prefix="/api/generation", tags=["generation"])
 ALLOWED_STATUSES = {"generated", "in_review", "revision_required", "approved"}
@@ -33,9 +42,12 @@ def run_generation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> GenerationResponse:
-    program = get_program_for_user(db, payload.program_id, current_user)
-    if program is None:
+    require_teacher_or_admin(current_user)
+    program_entity = get_program_entity_for_user(db, payload.program_id, current_user)
+    if program_entity is None:
         raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
+    ensure_can_edit_program_content(current_user, program_entity)
+    program = program_to_schema(program_entity)
 
     variants = generate_variants(
         topics=program.topics,
@@ -84,11 +96,15 @@ def update_generation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> GenerationResponse:
-    generation = get_generation_for_user(db, session_id, current_user)
-    if generation is None:
+    generation_entity = get_generation_entity_for_user(db, session_id, current_user)
+    if generation_entity is None:
         raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
 
-    program = get_program_for_user(db, generation.program_id, current_user)
+    program_entity = db.get(models.Program, generation_entity.program_id)
+    if program_entity is None:
+        raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
+    ensure_can_edit_generation_content(current_user, generation_entity, program_entity)
+    program = get_program_for_user(db, generation_entity.program_id, current_user)
     if program is None:
         raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
 
@@ -114,10 +130,12 @@ def update_status(
 
     if current_user.role == "teacher" and payload.status not in {"generated", "in_review"}:
         raise HTTPException(status_code=403, detail="Преподаватель может отправить работу только на проверку.")
-    if current_user.role in {"methodist", "admin"} and payload.status not in {"revision_required", "approved", "in_review"}:
+    if is_reviewer(current_user) and payload.status not in {"revision_required", "approved", "in_review"}:
         raise HTTPException(status_code=403, detail="Недопустимое изменение статуса для проверяющего.")
+    if current_user.role not in {"teacher", "methodist", "admin"}:
+        raise HTTPException(status_code=403, detail="Недостаточно прав для изменения статуса.")
 
-    reviewed_by = current_user.id if current_user.role in {"methodist", "admin"} else None
+    reviewed_by = current_user.id if is_reviewer(current_user) else None
     updated = update_generation_status(db, session_id, payload.status, payload.review_comment, reviewed_by)
     if updated is None:
         raise HTTPException(status_code=404, detail="Сеанс генерации не найден.")
@@ -131,13 +149,19 @@ def regenerate_question(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> GenerationResponse:
-    generation = get_generation_for_user(db, session_id, current_user)
-    if generation is None:
+    generation_entity = get_generation_entity_for_user(db, session_id, current_user)
+    if generation_entity is None:
         raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
 
-    program = get_program_for_user(db, generation.program_id, current_user)
-    if program is None:
+    program_entity = db.get(models.Program, generation_entity.program_id)
+    if program_entity is None:
         raise HTTPException(status_code=404, detail="Связанная РПД не найдена или нет доступа.")
+    ensure_can_edit_generation_content(current_user, generation_entity, program_entity)
+
+    generation = get_generation_for_user(db, session_id, current_user)
+    program = get_program_for_user(db, generation_entity.program_id, current_user)
+    if generation is None or program is None:
+        raise HTTPException(status_code=404, detail="Связанная РПД или сеанс генерации не найдены.")
 
     question_found = False
     all_texts = [question.text for variant in generation.variants for question in variant.questions]

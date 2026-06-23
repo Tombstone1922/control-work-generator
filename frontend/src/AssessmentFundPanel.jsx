@@ -28,6 +28,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   const [isValidating, setValidating] = useState(false);
   const [disciplineName, setDisciplineName] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showCompetencyMatrix, setShowCompetencyMatrix] = useState(false);
 
   const validation = fund?.validation || {};
   const enabledSections = useMemo(() => fund?.sections?.filter((section) => section.enabled) || [], [fund]);
@@ -41,6 +42,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     setFund(null);
     setDisciplineName('');
     setHasUnsavedChanges(false);
+    setShowCompetencyMatrix(false);
   }, [program?.program_id]);
 
   async function loadFunds() {
@@ -74,6 +76,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setFund(response.data);
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
+      setShowCompetencyMatrix(false);
       await loadFunds();
       setSuccess('Структура ФОС сформирована на основании выбранной РПД.');
     } catch (err) {
@@ -90,6 +93,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setFund(response.data);
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
+      setShowCompetencyMatrix(false);
       return response.data;
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть ФОС.');
@@ -234,7 +238,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
 
           {hasUnsavedChanges && <div className="notice">Есть несохраненные изменения в структуре ФОС. Сохраните их до генерации банка заданий.</div>}
 
-          <div className="diagnosticsGrid">
+          <div className="diagnosticsGrid fosMetricsGrid">
             <Metric value={`${validation.completeness_score || 0}%`} label="Заполненность структуры" />
             <Metric value={`${validation.topics_coverage_score || 0}%`} label="Покрытие тем" />
             <Metric value={`${validation.competencies_coverage_score || 0}%`} label="Покрытие компетенций" />
@@ -250,43 +254,54 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             </div>
           )}
 
-          <div className="fosGrid">
-            <div>
-              <h3>Разделы ФОС</h3>
-              <div className="fosSections">
-                {fund.sections.map((section) => (
-                  <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
-                    <div className="questionTopline">
-                      <div>
-                        <strong>{section.title}</strong>
-                        <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
-                      </div>
-                      <label className="toggleLabel">
-                        <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
-                        Включить
-                      </label>
-                    </div>
-                    <p className="muted">{section.description}</p>
-                    <div className="fosSectionMeta">
-                      <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
-                      <label>
-                        План заданий
-                        <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
-                      </label>
-                    </div>
-                  </article>
-                ))}
+          <div className="fosWorkspace">
+            <div className="fosWorkspaceHeader">
+              <div>
+                <h3>Разделы ФОС</h3>
+                <p className="muted">Вертикальный список удобнее для настройки: можно быстро пройти разделы сверху вниз и задать план заданий.</p>
               </div>
+              <button className="secondary" type="button" onClick={() => setShowCompetencyMatrix((value) => !value)}>
+                {showCompetencyMatrix ? 'Скрыть матрицу компетенций' : 'Показать матрицу компетенций'}
+              </button>
             </div>
 
-            <CompetencyMatrixEditor
-              api={api}
-              fund={fund}
-              setFund={setFund}
-              setError={setError}
-              setSuccess={setSuccess}
-              onFundRefresh={refreshCurrentFund}
-            />
+            {showCompetencyMatrix && (
+              <div className="competencyDrawer">
+                <CompetencyMatrixEditor
+                  api={api}
+                  fund={fund}
+                  setFund={setFund}
+                  setError={setError}
+                  setSuccess={setSuccess}
+                  onFundRefresh={refreshCurrentFund}
+                />
+              </div>
+            )}
+
+            <div className="fosSections">
+              {fund.sections.map((section) => (
+                <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
+                  <div className="questionTopline">
+                    <div>
+                      <strong>{section.title}</strong>
+                      <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
+                    </div>
+                    <label className="toggleLabel">
+                      <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
+                      Включить
+                    </label>
+                  </div>
+                  <p className="muted">{section.description}</p>
+                  <div className="fosSectionMeta">
+                    <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
+                    <label>
+                      План заданий
+                      <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
+                    </label>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
 
           {!hasUnsavedChanges && (

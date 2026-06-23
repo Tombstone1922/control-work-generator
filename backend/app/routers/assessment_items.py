@@ -32,6 +32,7 @@ from app.services.example_based_generator import apply_example_based_generation
 from app.services.local_llm_task_refiner import refine_items_with_local_llm
 from app.services.narrow_llm_service import apply_narrow_llm_generation
 from app.services.reference_library import find_om_examples_for_program, get_reference_library_path
+from app.services.role_policy import ensure_can_edit_fund_content
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
 
@@ -70,6 +71,7 @@ def generate_items(
     fund = get_fund_entity_for_user(db, fund_id, current_user)
     if fund is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    ensure_can_edit_fund_content(current_user, fund)
     profiling["stages_ms"]["load_fund"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
@@ -248,6 +250,10 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemRead:
+    fund = get_fund_entity_for_user(db, fund_id, current_user)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    ensure_can_edit_fund_content(current_user, fund)
     updated = update_item_for_user(db, fund_id, item_id, current_user, payload)
     if updated is None:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
@@ -261,6 +267,10 @@ def delete_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> Response:
+    fund = get_fund_entity_for_user(db, fund_id, current_user)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    ensure_can_edit_fund_content(current_user, fund)
     deleted = delete_item_for_user(db, fund_id, item_id, current_user)
     if not deleted:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")

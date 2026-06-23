@@ -18,6 +18,7 @@ from app.security import get_current_user
 from app.services.discipline_catalog import enrich_analysis_with_catalog
 from app.services.discipline_profile import DOMAIN_PROFILES, detect_discipline_profile, enrich_analysis_with_discipline_profile
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
+from app.services.role_policy import ensure_can_edit_program_content, require_teacher_or_admin
 from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
 from app.services.rpd_topic_sanitizer import sanitize_rpd_topics
 
@@ -52,7 +53,6 @@ def _sanitize_analysis_topics(analysis: RpdAnalysisResult, *, filename: str, tex
         )
 
     analysis.topics = cleaned_topics
-    # UI shows topic_sources in the “Исходные строки для тем” block. Keep them human-readable and prefix-free.
     analysis.topic_sources = list(cleaned_topics)
     analysis.diagnostics.topics_count = len(cleaned_topics)
     analysis.diagnostics.quality_score = min(
@@ -139,6 +139,7 @@ async def upload_program(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> ProgramAnalysis:
+    require_teacher_or_admin(current_user)
     program_id = str(uuid4())
     original_name = file.filename or "program"
     extension = Path(original_name).suffix.lower()
@@ -176,6 +177,7 @@ def reanalyze_program(
     entity = get_program_entity_for_user(db, program_id, current_user)
     if entity is None:
         raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
+    ensure_can_edit_program_content(current_user, entity)
 
     try:
         text = extract_text(entity.file_path)

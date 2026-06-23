@@ -51,6 +51,18 @@ BAD_MARKERS = (
     "контактная работа",
     "консультации",
     "общая трудоемкость",
+    "общая трудоёмкость",
+    "академических часах",
+    "академические часы",
+    "ак.ч",
+    "ак. ч",
+    "з.е",
+    "зачетных единиц",
+    "зачётных единиц",
+    "трудоемкость дисциплины",
+    "трудоёмкость дисциплины",
+    "код дисциплины",
+    "индекс дисциплины",
     "перечень оценочных средств",
     "рекомендуемых к использованию",
     "формировании оценочных материалов",
@@ -119,6 +131,9 @@ DOMAIN_WORDS = (
     "база", "данных", "sql", "компонент", "frontend", "backend", "тестирование", "оптимизация",
 )
 
+MODULE_CODE_RE = re.compile(r"^(?:[БB]\s*\.?)?\d+(?:\.\d+){2,}\.?\s*[-–—:]?\s*", re.IGNORECASE)
+MODULE_CODE_WITH_LETTER_RE = re.compile(r"^[БB]\s*\.\s*\d+(?:\.\d+)+\s*[-–—:]?\s*", re.IGNORECASE)
+
 
 def sanitize_rpd_topics(topics: list[str]) -> list[str]:
     result: list[str] = []
@@ -140,9 +155,16 @@ def sanitize_rpd_topic(value: str) -> str:
     if not value:
         return ""
 
+    lower_before = value.lower().replace("ё", "е")
+    if _looks_like_workload_or_service_line(lower_before):
+        return ""
+
+    value = _extract_quoted_title_after_module_code(value) or value
     value = re.sub(r"^(?:тема|раздел)\s*\d+(?:\.\d+)*[.)]?\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"^\d+(?:\.\d+)*[.)]?\s*", "", value)
-    value = re.sub(r"^Б1\.\S+\s*[-–—]?\s*", "", value, flags=re.IGNORECASE)
+    value = MODULE_CODE_WITH_LETTER_RE.sub("", value)
+    value = MODULE_CODE_RE.sub("", value)
+    value = re.sub(r"^Б\.?\s*\d+(?:\.\d+)+\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+\d+(?:\s+\d+){1,10}$", "", value)
     value = re.sub(r"\s+\|\s*\d+\s*(?:\|\s*\d+\s*)+$", "", value)
 
@@ -169,6 +191,10 @@ def is_valid_rpd_topic(value: str) -> bool:
         return False
     if any(marker in lower for marker in BAD_MARKERS):
         return False
+    if _looks_like_workload_or_service_line(lower):
+        return False
+    if _looks_like_module_code_line(value):
+        return False
     if _looks_like_assessment_question(lower):
         return False
     if re.fullmatch(r"[\d\s.,;/|\\\-–—]+", value):
@@ -187,6 +213,34 @@ def is_valid_rpd_topic(value: str) -> bool:
     return True
 
 
+def _extract_quoted_title_after_module_code(value: str) -> str:
+    if not (MODULE_CODE_RE.match(value) or MODULE_CODE_WITH_LETTER_RE.match(value)):
+        return ""
+    match = re.search(r"[«\"]([^»\"]{8,140})[»\"]", value)
+    return _clean(match.group(1)) if match else ""
+
+
+def _looks_like_workload_or_service_line(lower: str) -> bool:
+    if any(marker in lower for marker in BAD_MARKERS):
+        return True
+    if re.search(r"\b\d+\s*ак\.?\s*ч\.?\b", lower):
+        return True
+    if re.search(r"\b\d+\s*(?:час|часа|часов)\b", lower) and any(word in lower for word in ("академ", "трудоем", "трудоём", "объем", "объём")):
+        return True
+    if re.search(r"\b\d+\s*з\.?\s*е\.?\b", lower):
+        return True
+    return False
+
+
+def _looks_like_module_code_line(value: str) -> bool:
+    cleaned = _clean(value)
+    if re.fullmatch(r"(?:[БB]\s*\.?)?\d+(?:\.\d+){2,}\.?", cleaned, flags=re.IGNORECASE):
+        return True
+    if re.match(r"^[БB]\s*\.\s*\d+(?:\.\d+)+", cleaned, flags=re.IGNORECASE):
+        return True
+    return False
+
+
 def _looks_like_assessment_question(lower: str) -> bool:
     lower = lower.strip()
     if any(lower.startswith(starter) for starter in QUESTION_STARTERS):
@@ -203,7 +257,7 @@ def _clean(value: str) -> str:
     value = str(value or "").replace("#default#", "")
     value = value.replace("\xa0", " ")
     value = re.sub(r"\s+", " ", value)
-    return value.strip(" .;:-—|\t\n\r")
+    return value.strip(" .;:-—|\t\n\r\"«»")
 
 
 def _norm(value: str) -> str:

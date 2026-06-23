@@ -16,7 +16,7 @@ from app.repositories import (
 from app.schemas import ProgramAnalysis, RpdAnalysisReport, RpdDiagnostics
 from app.security import get_current_user
 from app.services.discipline_catalog import enrich_analysis_with_catalog
-from app.services.discipline_profile import enrich_analysis_with_discipline_profile
+from app.services.discipline_profile import DOMAIN_PROFILES, detect_discipline_profile, enrich_analysis_with_discipline_profile
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 from app.services.rpd_analyzer import RpdAnalysisResult, analyze_rpd_text
 from app.services.rpd_topic_sanitizer import sanitize_rpd_topics
@@ -30,20 +30,30 @@ def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
     analysis = analyze_rpd_text(text)
     analysis = enrich_analysis_with_discipline_profile(filename, text, analysis)
     analysis = enrich_analysis_with_catalog(filename, text, analysis)
-    return _sanitize_analysis_topics(analysis)
+    return _sanitize_analysis_topics(analysis, filename=filename, text=text)
 
 
-def _sanitize_analysis_topics(analysis: RpdAnalysisResult) -> RpdAnalysisResult:
+def _sanitize_analysis_topics(analysis: RpdAnalysisResult, *, filename: str, text: str) -> RpdAnalysisResult:
     raw_count = len(analysis.topics)
     cleaned_topics = sanitize_rpd_topics(analysis.topics)
     removed_count = max(raw_count - len(cleaned_topics), 0)
     if removed_count:
         analysis.diagnostics.warnings.append(f"Очистка тем РПД удалила служебные фрагменты таблиц и вопросы ФОС: {removed_count}.")
 
+    recovered_topics = _recover_missing_topics(
+        filename=filename,
+        text=text,
+        current_topics=cleaned_topics,
+    )
+    if recovered_topics:
+        cleaned_topics = _merge_unique_topics(cleaned_topics, recovered_topics)
+        analysis.diagnostics.warnings.append(
+            f"После очистки нормальных тем было недостаточно; восстановлены темы по предметному профилю: {len(recovered_topics)}."
+        )
+
     analysis.topics = cleaned_topics
-    # topic_sources are shown in UI. Before this fix they kept raw PDF/table fragments
-    # even when the public topics list was already sanitized.
-    analysis.topic_sources = [f"Очищенная тема: {topic}" for topic in cleaned_topics]
+    # UI shows topic_sources in the “Исходные строки для тем” block. Keep them human-readable and prefix-free.
+    analysis.topic_sources = list(cleaned_topics)
     analysis.diagnostics.topics_count = len(cleaned_topics)
     analysis.diagnostics.quality_score = min(
         100,
@@ -53,6 +63,43 @@ def _sanitize_analysis_topics(analysis: RpdAnalysisResult) -> RpdAnalysisResult:
         + min(len(analysis.detected_sections) * 3, 11),
     )
     return analysis
+
+
+def _recover_missing_topics(*, filename: str, text: str, current_topics: list[str]) -> list[str]:
+    if len(current_topics) >= 5:
+        return []
+    profile_key, confidence = detect_discipline_profile(filename, text, current_topics)
+    if not profile_key or confidence < 1.0:
+        return []
+    profile_topics = DOMAIN_PROFILES.get(profile_key, {}).get("topics", [])
+    candidates = sanitize_rpd_topics(profile_topics)
+    missing = []
+    existing = {_norm_topic(topic) for topic in current_topics}
+    for topic in candidates:
+        key = _norm_topic(topic)
+        if key in existing:
+            continue
+        existing.add(key)
+        missing.append(topic)
+        if len(current_topics) + len(missing) >= 8:
+            break
+    return missing
+
+
+def _merge_unique_topics(primary: list[str], fallback: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for topic in [*primary, *fallback]:
+        key = _norm_topic(topic)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(topic)
+    return result[:40]
+
+
+def _norm_topic(value: str) -> str:
+    return " ".join((value or "").lower().replace("ё", "е").split())
 
 
 def _build_program_schema(program_id: str, filename: str, text: str, analysis: RpdAnalysisResult) -> ProgramAnalysis:

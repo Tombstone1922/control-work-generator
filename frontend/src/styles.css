@@ -107,44 +107,26 @@ h3 { font-size: 16px; margin-bottom: 10px; }
   background: linear-gradient(135deg, #ffffff, #f8fbff);
 }
 
-.stepPills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
+.stepPills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.stepPills span { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border-radius: 999px; background: #eef2ff; color: #3858d6; font-weight: 800; font-size: 13px; }
 
-.stepPills span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #3858d6;
-  font-weight: 800;
-  font-size: 13px;
-}
-
-.workspaceGrid, .adminDashboard {
+.workspaceGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
   gap: 20px;
 }
 
-.uploadCard, .currentDocCard, .quickGenerationCard, .systemCard { min-height: 260px; }
+.adminDashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.uploadCard, .currentDocCard, .quickGenerationCard { min-height: 260px; }
+.systemCard { display: none; }
 .selectedFile { margin-top: 12px; margin-bottom: 0; }
 .docStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
 .adminIntro { background: linear-gradient(135deg, #ffffff, #f7fff9); }
-.systemCard code {
-  display: block;
-  margin: 10px 0;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: #172033;
-  color: #eaf0ff;
-  overflow-x: auto;
-}
 .adminMiniGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .statusDot { width: 10px; height: 10px; border-radius: 50%; background: #24a148; box-shadow: 0 0 0 6px rgba(36, 161, 72, 0.13); }
@@ -160,20 +142,7 @@ textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
 input:focus, select:focus, textarea:focus { border-color: #5d7fd8; box-shadow: 0 0 0 4px rgba(93, 127, 216, 0.12); }
 .fileInput { margin: 12px 0 16px; }
 
-.primary, .download, .secondary, .danger {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 44px;
-  border: 0;
-  border-radius: 14px;
-  padding: 0 18px;
-  background: #3858d6;
-  color: #fff;
-  font-weight: 750;
-  text-decoration: none;
-  cursor: pointer;
-}
+.primary, .download, .secondary, .danger { display: inline-flex; justify-content: center; align-items: center; min-height: 44px; border: 0; border-radius: 14px; padding: 0 18px; background: #3858d6; color: #fff; font-weight: 750; text-decoration: none; cursor: pointer; }
 .secondary { border: 1px solid #cfd8ea; background: #fff; color: #3858d6; }
 .danger { min-height: 36px; padding: 0 12px; background: #fff1f1; color: #a62424; border: 1px solid #ffd0d0; }
 .smallButton { min-height: 36px; padding: 0 12px; font-size: 13px; }

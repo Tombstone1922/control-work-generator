@@ -1,0 +1,21 @@
+.simplifiedLearningModePanel {
+  background: linear-gradient(135deg, #f9fbff, #f4f8ff);
+}
+
+.simplifiedLearningModeGrid {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.simplifiedLearningModeGrid label {
+  max-width: 720px;
+}
+
+.simplifiedGenerationToolbar {
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+}
+
+@media (max-width: 900px) {
+  .simplifiedGenerationToolbar {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -19,6 +19,9 @@ const SECTION_LABELS = {
   grading_rubric: 'Критерии оценивания',
 };
 
+const SERVICE_SECTION_TYPES = new Set(['competency_matrix', 'grading_rubric']);
+const HIGH_PLAN_SECTION_TYPES = new Set(['oral', 'control_work']);
+
 function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   const [funds, setFunds] = useState([]);
   const [fund, setFund] = useState(null);
@@ -133,6 +136,18 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     setShowFosSections((current) => !current);
   }
 
+  function applyCompactPlanPreset() {
+    setFund((current) => ({
+      ...current,
+      sections: current.sections.map((section) => ({
+        ...section,
+        planned_items: compactPlannedItems(section),
+      })),
+    }));
+    setHasUnsavedChanges(true);
+    setSuccess('План заданий применён: обычные разделы — 10, устный опрос и контрольная — 15. Сохраните ФОС.');
+  }
+
   function updateTitle(value) {
     setFund((current) => ({ ...current, title: value }));
     setHasUnsavedChanges(true);
@@ -243,6 +258,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
               <input value={fund.discipline_name} onChange={(event) => updateDisciplineName(event.target.value)} />
             </label>
             <div className="actionGroup">
+              <button className="secondary" type="button" onClick={applyCompactPlanPreset}>План 10/15</button>
               <button className="secondary" type="button" onClick={validateFund} disabled={isValidating || hasUnsavedChanges}>
                 {isValidating ? 'Проверяем...' : 'Проверить структуру'}
               </button>
@@ -353,6 +369,12 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       )}
     </section>
   );
+}
+
+function compactPlannedItems(section) {
+  if (!section.enabled || SERVICE_SECTION_TYPES.has(section.assessment_type)) return 0;
+  if (HIGH_PLAN_SECTION_TYPES.has(section.assessment_type)) return 15;
+  return 10;
 }
 
 function Metric({ value, label }) {

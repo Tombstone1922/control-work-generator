@@ -29,6 +29,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   const [disciplineName, setDisciplineName] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showCompetencyMatrix, setShowCompetencyMatrix] = useState(false);
+  const [expandedPlanSections, setExpandedPlanSections] = useState({});
 
   const validation = fund?.validation || {};
   const enabledSections = useMemo(() => fund?.sections?.filter((section) => section.enabled) || [], [fund]);
@@ -43,6 +44,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     setDisciplineName('');
     setHasUnsavedChanges(false);
     setShowCompetencyMatrix(false);
+    setExpandedPlanSections({});
   }, [program?.program_id]);
 
   async function loadFunds() {
@@ -77,6 +79,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
       setShowCompetencyMatrix(false);
+      setExpandedPlanSections({});
       await loadFunds();
       setSuccess('Структура ФОС сформирована на основании выбранной РПД.');
     } catch (err) {
@@ -94,6 +97,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       setDisciplineName(response.data.discipline_name);
       setHasUnsavedChanges(false);
       setShowCompetencyMatrix(false);
+      setExpandedPlanSections({});
       return response.data;
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть ФОС.');
@@ -115,6 +119,10 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
       )),
     }));
     setHasUnsavedChanges(true);
+  }
+
+  function togglePlanSection(sectionCode) {
+    setExpandedPlanSections((current) => ({ ...current, [sectionCode]: !current[sectionCode] }));
   }
 
   function updateTitle(value) {
@@ -279,28 +287,37 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             )}
 
             <div className="fosSections">
-              {fund.sections.map((section) => (
-                <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
-                  <div className="questionTopline">
-                    <div>
-                      <strong>{section.title}</strong>
-                      <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
+              {fund.sections.map((section) => {
+                const isPlanOpen = Boolean(expandedPlanSections[section.code]);
+                return (
+                  <article className={`fosSection ${section.enabled ? '' : 'fosSectionDisabled'}`} key={section.code}>
+                    <div className="questionTopline">
+                      <div>
+                        <strong>{section.title}</strong>
+                        <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
+                      </div>
+                      <label className="toggleLabel">
+                        <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
+                        Включить
+                      </label>
                     </div>
-                    <label className="toggleLabel">
-                      <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
-                      Включить
-                    </label>
-                  </div>
-                  <p className="muted">{section.description}</p>
-                  <div className="fosSectionMeta">
-                    <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
-                    <label>
-                      План заданий
-                      <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
-                    </label>
-                  </div>
-                </article>
-              ))}
+                    <p className="muted">{section.description}</p>
+                    <div className="fosSectionMetaCompact">
+                      <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
+                      <button className="planToggleButton" type="button" onClick={() => togglePlanSection(section.code)} aria-expanded={isPlanOpen}>
+                        <span>План: {section.planned_items}</span>
+                        <strong>{isPlanOpen ? 'Скрыть' : 'Изменить'}</strong>
+                      </button>
+                    </div>
+                    <div className={`plannedItemsPanel ${isPlanOpen ? 'plannedItemsPanelOpen' : ''}`}>
+                      <label>
+                        План заданий для раздела
+                        <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
+                      </label>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </div>
 

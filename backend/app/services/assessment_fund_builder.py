@@ -53,6 +53,9 @@ ASSESSMENT_TYPE_LABELS = {
     "competency_matrix": "Матрица компетенций",
 }
 
+SERVICE_ASSESSMENT_TYPES = {"competency_matrix", "grading_rubric"}
+COMPACT_HIGH_VOLUME_TYPES = {"oral", "control_work"}
+
 
 @dataclass
 class AssessmentFundDraft:
@@ -104,7 +107,7 @@ def validate_assessment_fund(
     if any(
         section.planned_items == 0
         for section in enabled
-        if section.assessment_type not in {"competency_matrix", "grading_rubric"}
+        if section.assessment_type not in SERVICE_ASSESSMENT_TYPES
     ):
         warnings.append("Для некоторых разделов не рассчитано количество заданий.")
 
@@ -169,23 +172,11 @@ def _build_sections(topics: list[str], assessment_types: list[str]) -> list[Asse
 
 
 def _planned_items(assessment_type: str, topics: list[str]) -> int:
-    count = max(len(topics), 1)
-    return {
-        "oral": count * 3,
-        "practice": count * 2,
-        "exam_questions": max(count * 2, 12),
-        "exam_practice": max(count, 6),
-        "credit": max(count * 2, 12),
-        "control_work": max(count, 6),
-        "coursework": max(min(count, 12), 3),
-        "course_project": max(min(count, 12), 3),
-        "laboratory": max(count, 6),
-        "test_bank": max(count * 3, 20),
-        "report_topics": max(min(count * 2, 20), 6),
-        "diagnostic": max(count * 2, 12),
-        "competency_matrix": 0,
-        "grading_rubric": 0,
-    }.get(assessment_type, 0)
+    if assessment_type in SERVICE_ASSESSMENT_TYPES:
+        return 0
+    if assessment_type in COMPACT_HIGH_VOLUME_TYPES:
+        return 15
+    return 10
 
 
 def _detect_assessment_types(source_text: str) -> list[str]:

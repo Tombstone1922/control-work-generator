@@ -18,6 +18,7 @@ from app.services.assessment_item_validator import validate_assessment_items
 from app.services.docx_exporter import export_generation_to_docx
 from app.services.example_based_generator import apply_example_based_generation
 from app.services.reference_library import find_om_examples_for_program
+from app.services.role_policy import ensure_can_edit_fund_content
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -54,6 +55,13 @@ def export_assessment_fund_docx(
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
 
     if not items:
+        try:
+            ensure_can_edit_fund_content(current_user, fund_entity)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="В ФОС еще нет заданий. Попросите преподавателя сформировать банк заданий перед экспортом.",
+            ) from exc
         items = _generate_missing_items_for_export(db, fund_entity, current_user)
         fund = get_assessment_fund_for_user(db, fund_id, current_user)
         if fund is None:

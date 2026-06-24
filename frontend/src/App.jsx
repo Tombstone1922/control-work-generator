@@ -5,6 +5,7 @@ import AssessmentFundPanel from './AssessmentFundPanel.jsx';
 const API_URL = 'http://127.0.0.1:8000';
 const TOKEN_KEY = 'control_work_generator_token';
 const USER_KEY = 'control_work_generator_user';
+const THEME_KEY = 'control_work_generator_theme';
 const LOCKED_STATUSES = new Set(['in_review', 'approved']);
 
 const defaultGenerationParams = {
@@ -20,6 +21,7 @@ function App() {
     const stored = localStorage.getItem(USER_KEY);
     return stored ? JSON.parse(stored) : null;
   });
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
   const [activePage, setActivePage] = useState('workspace');
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ full_name: '', email: '', password: '' });
@@ -47,6 +49,13 @@ function App() {
   }), [token]);
 
   const canEditWorkspace = user?.role === 'teacher' || user?.role === 'admin';
+  const isDarkTheme = theme === 'dark';
+
+  useEffect(() => {
+    document.body.dataset.theme = theme;
+    document.body.classList.toggle('darkTheme', theme === 'dark');
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!token) return;
@@ -60,6 +69,10 @@ function App() {
       })
       .catch(() => logout(false));
   }, [token]);
+
+  function toggleTheme() {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark');
+  }
 
   async function submitAuth(event) {
     event.preventDefault();
@@ -339,6 +352,7 @@ function App() {
           <p className="heroText">Рабочая область отделена от администрирования: преподаватель готовит материалы, методист проверяет, администратор управляет ролями.</p>
         </div>
         <div className="userBox">
+          <ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} />
           <strong>{user.full_name}</strong>
           <span>{user.email}</span>
           <span>Роль: {roleLabel(user.role)}</span>
@@ -407,6 +421,19 @@ function App() {
         />
       )}
     </main>
+  );
+}
+
+function ThemeToggle({ isDark, onToggle }) {
+  return (
+    <button className={`themeToggle ${isDark ? 'themeToggleDark' : ''}`} type="button" onClick={onToggle} aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}>
+      <span className="themeToggleTrack">
+        <span className="themeIcon themeSun">☀</span>
+        <span className="themeIcon themeMoon">☾</span>
+        <span className="themeToggleThumb" />
+      </span>
+      <strong>{isDark ? 'Тёмная' : 'Светлая'}</strong>
+    </button>
   );
 }
 

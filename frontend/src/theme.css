@@ -1,0 +1,360 @@
+:root {
+  color-scheme: light;
+}
+
+body,
+.card,
+button,
+input,
+select,
+textarea,
+.historyItem,
+.metric,
+.fosSection,
+.itemBankListItem,
+.adminRow,
+.notice,
+.alert,
+.success {
+  transition:
+    background-color 0.28s ease,
+    background 0.28s ease,
+    border-color 0.28s ease,
+    color 0.28s ease,
+    box-shadow 0.28s ease,
+    transform 0.18s ease;
+}
+
+.themeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  padding: 8px 10px;
+  border: 1px solid rgba(190, 204, 235, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #253858;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(56, 88, 214, 0.08);
+}
+
+.themeToggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(56, 88, 214, 0.14);
+}
+
+.themeToggle strong {
+  min-width: 58px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.themeToggleTrack {
+  position: relative;
+  width: 64px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #8bb9ff, #f8d57a);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.56);
+}
+
+.themeToggleTrack::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 35%, rgba(255,255,255,0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 72% 70%, rgba(255,255,255,0.72) 0 1px, transparent 2px),
+    linear-gradient(135deg, rgba(255,255,255,0.25), transparent);
+  opacity: 0.85;
+  transition: opacity 0.28s ease;
+}
+
+.themeIcon {
+  position: relative;
+  z-index: 2;
+  font-size: 15px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.themeMoon {
+  transform: translateY(1px);
+}
+
+.themeToggleThumb {
+  position: absolute;
+  z-index: 3;
+  left: 4px;
+  top: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, #ffffff 0 25%, #fff6ce 48%, #ffc857 100%);
+  box-shadow:
+    0 6px 14px rgba(82, 101, 143, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.75);
+  transition: transform 0.34s cubic-bezier(.2,.9,.24,1.2), background 0.28s ease, box-shadow 0.28s ease;
+}
+
+.themeToggleDark .themeToggleTrack {
+  background: linear-gradient(135deg, #16213f, #4b5fc7);
+}
+
+.themeToggleDark .themeToggleTrack::before {
+  opacity: 1;
+  background:
+    radial-gradient(circle at 22% 35%, rgba(255,255,255,0.9) 0 1px, transparent 2px),
+    radial-gradient(circle at 58% 28%, rgba(255,255,255,0.75) 0 1px, transparent 2px),
+    radial-gradient(circle at 76% 70%, rgba(255,255,255,0.82) 0 1.5px, transparent 2.5px),
+    linear-gradient(135deg, rgba(255,255,255,0.12), transparent);
+}
+
+.themeToggleDark .themeToggleThumb {
+  transform: translateX(30px);
+  background:
+    radial-gradient(circle at 64% 32%, #eef4ff 0 15%, transparent 16%),
+    radial-gradient(circle at 40% 64%, #d6def5 0 10%, transparent 11%),
+    linear-gradient(135deg, #f8fbff, #a9b7d8);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.36),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.76);
+}
+
+body.darkTheme {
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at 16% -10%, rgba(73, 101, 255, 0.24), transparent 32%),
+    radial-gradient(circle at 92% 8%, rgba(72, 190, 255, 0.16), transparent 26%),
+    linear-gradient(180deg, #080d1b 0%, #0f172a 45%, #111827 100%);
+  color: #e5edf9;
+}
+
+body.darkTheme .page {
+  background: transparent;
+  color: #e5edf9;
+}
+
+body.darkTheme .card,
+body.darkTheme .authCard,
+body.darkTheme .pageIntro,
+body.darkTheme .uploadCard,
+body.darkTheme .currentDocCard,
+body.darkTheme .historyCard,
+body.darkTheme .quickGenerationCard,
+body.darkTheme .systemCard,
+body.darkTheme .fosCard,
+body.darkTheme .fosIntro,
+body.darkTheme .fosToolbar,
+body.darkTheme .fosHistory,
+body.darkTheme .fosWorkspace,
+body.darkTheme .itemBank,
+body.darkTheme .itemBankHero,
+body.darkTheme .trainingDatasetPanel,
+body.darkTheme .contextModulePanel,
+body.darkTheme .contextTopicPanel,
+body.darkTheme .learningModePanel,
+body.darkTheme .generationSummary,
+body.darkTheme .itemValidation,
+body.darkTheme .itemBankEditor,
+body.darkTheme .itemBankList,
+body.darkTheme .competencyDrawer,
+body.darkTheme .adminRow,
+body.darkTheme .sourceContextBox,
+body.darkTheme .trainingFeedback {
+  background: linear-gradient(180deg, rgba(17, 25, 45, 0.94), rgba(12, 19, 36, 0.94));
+  border-color: rgba(116, 142, 205, 0.36);
+  color: #e5edf9;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.28);
+}
+
+body.darkTheme .appHero {
+  background:
+    radial-gradient(circle at 8% 18%, rgba(72, 190, 255, 0.16), transparent 30%),
+    linear-gradient(135deg, rgba(22, 33, 63, 0.98), rgba(13, 20, 38, 0.98));
+}
+
+body.darkTheme .appNav,
+body.darkTheme .userBox,
+body.darkTheme .metric,
+body.darkTheme .docStats .metric,
+body.darkTheme .historyItem,
+body.darkTheme .fosSection,
+body.darkTheme .fosCompetency,
+body.darkTheme .itemBankListItem,
+body.darkTheme .question,
+body.darkTheme .variant,
+body.darkTheme .plannedItemsPanel label,
+body.darkTheme .coverageTableWrap,
+body.darkTheme .analysisDetails,
+body.darkTheme .systemStatusBox,
+body.darkTheme .sourceMiniStats span,
+body.darkTheme .itemBankStats span,
+body.darkTheme .chipList span,
+body.darkTheme .fosLevelTags span,
+body.darkTheme .stepPills span,
+body.darkTheme .badge,
+body.darkTheme code {
+  background: rgba(21, 32, 58, 0.92);
+  border-color: rgba(116, 142, 205, 0.38);
+  color: #e5edf9;
+}
+
+body.darkTheme .navTab {
+  background: rgba(18, 28, 51, 0.84);
+  border-color: rgba(116, 142, 205, 0.28);
+  color: #cbd7ee;
+}
+
+body.darkTheme .activeNavTab,
+body.darkTheme .navTab:hover,
+body.darkTheme .activeHistoryItem,
+body.darkTheme .activeItemBankListItem,
+body.darkTheme .fosWorkspaceOpen {
+  background: linear-gradient(135deg, rgba(48, 75, 166, 0.46), rgba(24, 38, 72, 0.94));
+  border-color: rgba(119, 150, 255, 0.7);
+  box-shadow: 0 16px 34px rgba(54, 92, 255, 0.18);
+}
+
+body.darkTheme h1,
+body.darkTheme h2,
+body.darkTheme h3,
+body.darkTheme strong,
+body.darkTheme label,
+body.darkTheme .questionTopline strong,
+body.darkTheme .fosAccordionHeader h3,
+body.darkTheme .itemBankListItem strong {
+  color: #f8fbff;
+}
+
+body.darkTheme .muted,
+body.darkTheme small,
+body.darkTheme .heroText,
+body.darkTheme .itemBankListItem span,
+body.darkTheme .historyItem span,
+body.darkTheme .fosSectionMetaCompact,
+body.darkTheme .fosSection p,
+body.darkTheme .compactList,
+body.darkTheme .compactList li {
+  color: #a9b7d8;
+}
+
+body.darkTheme .eyebrow,
+body.darkTheme .sourceBadge,
+body.darkTheme .chipList strong,
+body.darkTheme .compactList strong {
+  color: #8fb5ff;
+}
+
+body.darkTheme input,
+body.darkTheme select,
+body.darkTheme textarea,
+body.darkTheme .fileInput {
+  background: rgba(8, 13, 27, 0.9);
+  border-color: rgba(126, 153, 222, 0.46);
+  color: #edf4ff;
+  caret-color: #9db8ff;
+}
+
+body.darkTheme input::placeholder,
+body.darkTheme textarea::placeholder {
+  color: #7787a8;
+}
+
+body.darkTheme input:disabled,
+body.darkTheme select:disabled,
+body.darkTheme textarea[readonly],
+body.darkTheme textarea:disabled {
+  background: rgba(18, 27, 48, 0.68);
+  color: #aab8d3;
+  border-color: rgba(100, 122, 177, 0.32);
+}
+
+body.darkTheme .secondary,
+body.darkTheme .planToggleButton,
+body.darkTheme .fosAccordionHeader,
+body.darkTheme .themeToggle {
+  background: rgba(22, 34, 62, 0.95);
+  border-color: rgba(124, 151, 218, 0.46);
+  color: #cfe0ff;
+}
+
+body.darkTheme .primary,
+body.darkTheme .download {
+  background: linear-gradient(135deg, #5570ff, #3754d9);
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(60, 90, 255, 0.24);
+}
+
+body.darkTheme .danger {
+  background: rgba(127, 29, 29, 0.92);
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #ffe1e1;
+}
+
+body.darkTheme .notice {
+  background: rgba(30, 41, 76, 0.88);
+  border-color: rgba(120, 151, 230, 0.36);
+  color: #dbe7ff;
+}
+
+body.darkTheme .success {
+  background: rgba(5, 84, 67, 0.9);
+  border-color: rgba(45, 212, 191, 0.38);
+  color: #d7fff8;
+}
+
+body.darkTheme .alert {
+  background: rgba(127, 29, 29, 0.88);
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #ffe1e1;
+}
+
+body.darkTheme table,
+body.darkTheme .coverageTable {
+  background: rgba(13, 20, 38, 0.92);
+  color: #e5edf9;
+}
+
+body.darkTheme th,
+body.darkTheme td {
+  border-color: rgba(116, 142, 205, 0.28);
+}
+
+body.darkTheme th {
+  background: rgba(25, 38, 70, 0.96);
+  color: #f8fbff;
+}
+
+body.darkTheme .fosAccordionHeader:hover,
+body.darkTheme .historyItem:hover,
+body.darkTheme .itemBankListItem:hover,
+body.darkTheme .fosSection:hover {
+  background: rgba(33, 49, 88, 0.98);
+  border-color: rgba(145, 170, 244, 0.68);
+}
+
+body.darkTheme .themeToggle strong {
+  color: #dbe7ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .themeToggle,
+  .themeToggleThumb,
+  .themeIcon,
+  .themeToggleTrack,
+  .themeToggleTrack::before {
+    transition: none !important;
+  }
+}

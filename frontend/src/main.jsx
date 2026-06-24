@@ -8,6 +8,7 @@ import './item-bank.css';
 import './compact-generation.css';
 import './competency-editor.css';
 import './theme.css';
+import './dark-item-bank.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

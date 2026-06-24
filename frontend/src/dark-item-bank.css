@@ -1,0 +1,119 @@
+/* Dark theme hardening for the FOS item bank and context-module screens. */
+
+body.darkTheme .simplifiedLearningModePanel,
+body.darkTheme .simplifiedGenerationToolbar,
+body.darkTheme .itemBankToolbar {
+  background: linear-gradient(135deg, #111827 0%, #0f172a 100%) !important;
+  border-color: #263247;
+  color: #e5e7eb;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+}
+
+body.darkTheme .itemBankToolbar label,
+body.darkTheme .simplifiedGenerationToolbar label,
+body.darkTheme .simplifiedLearningModePanel label,
+body.darkTheme .toggleLabel,
+body.darkTheme .itemBankCheckbox {
+  color: #e5e7eb;
+}
+
+body.darkTheme .itemBankToolbar select,
+body.darkTheme .simplifiedGenerationToolbar select,
+body.darkTheme .simplifiedLearningModePanel select {
+  background-color: #0b1220;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+body.darkTheme .itemBankToolbar select option,
+body.darkTheme .simplifiedGenerationToolbar select option,
+body.darkTheme .simplifiedLearningModePanel select option {
+  background-color: #0b1220;
+  color: #f8fafc;
+}
+
+body.darkTheme .itemBankCheckbox input[type="checkbox"],
+body.darkTheme input[type="checkbox"] {
+  accent-color: #3b82f6;
+}
+
+body.darkTheme .contextModuleStats span,
+body.darkTheme .contextTopicPanel .chipList span,
+body.darkTheme .contextModulePanel .chipList span,
+body.darkTheme .sourceMiniStats span,
+body.darkTheme .itemBankStats span,
+body.darkTheme .generationSummary .itemBankStats span,
+body.darkTheme .trainingDatasetPanel .itemBankStats span {
+  background: #151f32;
+  border: 1px solid #2c3a54;
+  color: #dbeafe;
+}
+
+body.darkTheme .contextModuleStats strong,
+body.darkTheme .itemBankStats strong,
+body.darkTheme .sourceMiniStats strong {
+  color: #f8fafc;
+}
+
+body.darkTheme .chipList strong,
+body.darkTheme .compactList strong {
+  color: #93c5fd;
+}
+
+body.darkTheme .chipList span {
+  background: #0f172a;
+  border-color: #334155;
+  color: #dbeafe;
+}
+
+body.darkTheme .compactList ul,
+body.darkTheme .compactList li {
+  color: #cbd5e1;
+}
+
+body.darkTheme .sourceBadge {
+  box-shadow: none;
+}
+
+body.darkTheme .sourceTemplate {
+  background: #1e293b;
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+body.darkTheme .sourceNarrow {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.38);
+  color: #fbbf24;
+}
+
+body.darkTheme .sourceKnowledge {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.38);
+  color: #6ee7b7;
+}
+
+body.darkTheme .sourceSmart {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.42);
+  color: #93c5fd;
+}
+
+body.darkTheme .sourceLearned {
+  background: rgba(236, 72, 153, 0.14);
+  border-color: rgba(236, 72, 153, 0.4);
+  color: #f9a8d4;
+}
+
+body.darkTheme .sourceQwen {
+  background: rgba(168, 85, 247, 0.14);
+  border-color: rgba(168, 85, 247, 0.42);
+  color: #c4b5fd;
+}
+
+body.darkTheme .primary:disabled,
+body.darkTheme .download:disabled,
+body.darkTheme .secondary:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}

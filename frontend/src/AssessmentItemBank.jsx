@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundRefresh }) {
+function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
   const [validation, setValidation] = useState(null);
   const [trainingStats, setTrainingStats] = useState(null);
@@ -50,9 +50,9 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     setTeacherComment('');
     setSelectedContext(null);
     loadItems();
-    loadTrainingStats();
+    if (canEdit) loadTrainingStats();
     loadContextSummary();
-  }, [fund?.fund_id]);
+  }, [fund?.fund_id, canEdit]);
 
   useEffect(() => setTeacherComment(''), [selectedItemId]);
 
@@ -112,7 +112,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   }
 
   async function generateItems() {
-    if (!fund?.fund_id) return;
+    if (!fund?.fund_id || !canEdit) return;
     setGenerating(true);
     setError('');
     setSuccess('');
@@ -172,7 +172,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   }
 
   async function downloadTrainingDataset() {
-    if (!fund?.fund_id) return;
+    if (!fund?.fund_id || !canEdit) return;
     setExportingDataset(true);
     setError('');
     try {
@@ -187,7 +187,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   }
 
   async function addTrainingExample(qualityLabel) {
-    if (!selectedItem) return;
+    if (!selectedItem || !canEdit) return;
     setTraining(true);
     setError('');
     setSuccess('');
@@ -204,11 +204,12 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   }
 
   function patchSelectedItem(patch) {
+    if (!canEdit) return;
     setItems((current) => current.map((item) => item.id === selectedItemId ? { ...item, ...patch } : item));
   }
 
   async function saveSelectedItem() {
-    if (!selectedItem) return;
+    if (!selectedItem || !canEdit) return;
     setSaving(true);
     setError('');
     try {
@@ -234,7 +235,7 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
   }
 
   async function deleteSelectedItem() {
-    if (!selectedItem) return;
+    if (!selectedItem || !canEdit) return;
     setError('');
     try {
       await api.delete(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`);
@@ -253,8 +254,8 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
     <section className="itemBank">
       <div className="sectionHeader">
         <div>
-          <h3>Банк заданий ФОС</h3>
-          <p className="muted">Формируйте задания, редактируйте их экспертно и сохраняйте хорошие/плохие примеры для обучения интеллектуального генератора ФОС.</p>
+          <h3>{canEdit ? 'Банк заданий ФОС' : 'Просмотр банка заданий ФОС'}</h3>
+          <p className="muted">{canEdit ? 'Формируйте задания, редактируйте их экспертно и сохраняйте хорошие/плохие примеры для обучения интеллектуального генератора ФОС.' : 'Методист проверяет сформированный банк заданий без изменения формулировок.'}</p>
         </div>
         <div className="actionGroup">
           <button className="secondary" type="button" onClick={() => loadItems(selectedSectionCode)} disabled={isLoading}>{isLoading ? 'Обновляем...' : 'Обновить банк'}</button>
@@ -274,15 +275,16 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         </div>
       </div>
 
-      <TrainingDatasetPanel stats={trainingStats} downloadTrainingDataset={downloadTrainingDataset} isExportingDataset={isExportingDataset} />
+      {canEdit && <TrainingDatasetPanel stats={trainingStats} downloadTrainingDataset={downloadTrainingDataset} isExportingDataset={isExportingDataset} />}
       <ContextModuleSummaryPanel summary={contextSummary} />
-      <LearningModePanel generationMode={generationMode} setGenerationMode={setGenerationMode} stats={trainingStats} />
+      {canEdit && <LearningModePanel generationMode={generationMode} setGenerationMode={setGenerationMode} stats={trainingStats} />}
+      {!canEdit && <div className="notice">Режим методиста: генерация, редактирование, удаление и разметка обучающих примеров скрыты.</div>}
       {generationSummary && <GenerationSummary generation={generationSummary} />}
 
       <div className="itemBankToolbar simplifiedGenerationToolbar">
         <label>Раздел ФОС<select value={selectedSectionCode} onChange={(event) => setSelectedSectionCode(event.target.value)}><option value="">Все активные разделы</option>{enabledSections.map((section) => <option key={section.code} value={section.code}>{section.title}</option>)}</select></label>
-        <label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} />Заменить старые задания</label>
-        <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : 'Сформировать задания'}</button>
+        {canEdit && <label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} />Заменить старые задания</label>}
+        {canEdit && <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : 'Сформировать задания'}</button>}
       </div>
 
       <div className="itemBankStats"><span>Всего заданий: <strong>{items.length}</strong></span><span>В выбранном разделе: <strong>{visibleItems.length}</strong></span></div>
@@ -302,15 +304,18 @@ function AssessmentItemBank({ api, fund, sections, setError, setSuccess, onFundR
         <div className="itemBankEditor">
           {selectedItem ? (
             <>
-              <div className="questionTopline"><div><h3>Редактор задания</h3><SourceBadge kind={selectedItem.source_kind} /></div><div className="actionGroup"><button className="danger" type="button" onClick={deleteSelectedItem}>Удалить</button><button className="primary" type="button" onClick={saveSelectedItem} disabled={isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить'}</button></div></div>
+              <div className="questionTopline">
+                <div><h3>{canEdit ? 'Редактор задания' : 'Просмотр задания'}</h3><SourceBadge kind={selectedItem.source_kind} /></div>
+                {canEdit && <div className="actionGroup"><button className="danger" type="button" onClick={deleteSelectedItem}>Удалить</button><button className="primary" type="button" onClick={saveSelectedItem} disabled={isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить'}</button></div>}
+              </div>
               <ContextModuleTopicPanel context={selectedContext} isLoading={isLoadingContext} refresh={() => loadTopicContext(selectedItem.topic, true)} />
-              <label>Формулировка<textarea value={selectedItem.text} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
-              <label>Эталонный ответ<textarea value={selectedItem.answer} onChange={(event) => patchSelectedItem({ answer: event.target.value })} /></label>
-              <div className="miniGrid"><label>Тема<input value={selectedItem.topic} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
-              <label>Индикатор<textarea value={selectedItem.indicator} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
-              <label>Критерии оценивания<textarea value={selectedItem.criteria.join('\n')} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
+              <label>Формулировка<textarea value={selectedItem.text} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
+              <label>Эталонный ответ<textarea value={selectedItem.answer} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ answer: event.target.value })} /></label>
+              <div className="miniGrid"><label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
+              <label>Индикатор<textarea value={selectedItem.indicator} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
+              <label>Критерии оценивания<textarea value={(selectedItem.criteria || []).join('\n')} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
               <div className="sourceContextBox"><strong>Источник формирования</strong><p>{selectedItem.source_context || 'не указан'}</p></div>
-              <section className="trainingFeedback"><h3>Экспертная разметка для самообучения</h3><p className="muted">После ручной правки сохраните задание как хороший пример, плохой пример или пример, требующий доработки.</p><label>Комментарий преподавателя<textarea value={teacherComment} onChange={(event) => setTeacherComment(event.target.value)} /></label><div className="actionGroup trainingActions"><button className="secondary" type="button" onClick={() => addTrainingExample('needs_revision')} disabled={isTraining}>Нужно доработать</button><button className="danger" type="button" onClick={() => addTrainingExample('bad')} disabled={isTraining}>Плохой пример</button><button className="primary" type="button" onClick={() => addTrainingExample('good')} disabled={isTraining}>Хороший пример</button></div></section>
+              {canEdit && <section className="trainingFeedback"><h3>Экспертная разметка для самообучения</h3><p className="muted">После ручной правки сохраните задание как хороший пример, плохой пример или пример, требующий доработки.</p><label>Комментарий преподавателя<textarea value={teacherComment} onChange={(event) => setTeacherComment(event.target.value)} /></label><div className="actionGroup trainingActions"><button className="secondary" type="button" onClick={() => addTrainingExample('needs_revision')} disabled={isTraining}>Нужно доработать</button><button className="danger" type="button" onClick={() => addTrainingExample('bad')} disabled={isTraining}>Плохой пример</button><button className="primary" type="button" onClick={() => addTrainingExample('good')} disabled={isTraining}>Хороший пример</button></div></section>}
             </>
           ) : <p className="muted">Выберите задание слева.</p>}
         </div>

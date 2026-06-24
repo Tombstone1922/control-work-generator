@@ -13,6 +13,7 @@ from app.routers import (
     local_llm,
     narrow_generation,
     programs,
+    qwen_training,
     reference_materials,
     training_examples,
 )
@@ -40,6 +41,7 @@ app.include_router(generation.router)
 app.include_router(assessment_funds.router)
 app.include_router(assessment_items.router)
 app.include_router(narrow_generation.router)
+app.include_router(qwen_training.router)
 app.include_router(reference_materials.router)
 app.include_router(training_examples.router)
 app.include_router(context_module.router)

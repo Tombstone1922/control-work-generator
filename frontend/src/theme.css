@@ -232,6 +232,15 @@ body.darkTheme .navTab {
   color: #cbd5e1;
 }
 
+body.darkTheme .navTab span {
+  color: #e5e7eb;
+  font-weight: 850;
+}
+
+body.darkTheme .navTab small {
+  color: #94a3b8;
+}
+
 body.darkTheme .activeNavTab,
 body.darkTheme .navTab:hover,
 body.darkTheme .activeHistoryItem,
@@ -240,6 +249,17 @@ body.darkTheme .fosWorkspaceOpen {
   background: #17223a;
   border-color: #3b82f6;
   box-shadow: 0 14px 30px rgba(37, 99, 235, 0.16);
+}
+
+body.darkTheme .activeNavTab span,
+body.darkTheme .activeNavTab:hover span {
+  color: #93c5fd;
+  text-shadow: 0 0 18px rgba(59, 130, 246, 0.28);
+}
+
+body.darkTheme .activeNavTab small,
+body.darkTheme .activeNavTab:hover small {
+  color: #cbd5e1;
 }
 
 body.darkTheme h1,

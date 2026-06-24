@@ -21,8 +21,9 @@ const SECTION_LABELS = {
 
 const SERVICE_SECTION_TYPES = new Set(['competency_matrix', 'grading_rubric']);
 const HIGH_PLAN_SECTION_TYPES = new Set(['oral', 'control_work']);
+const LOCKED_STATUSES = new Set(['in_review', 'approved']);
 
-function AssessmentFundPanel({ api, program, setError, setSuccess }) {
+function AssessmentFundPanel({ api, program, user, setError, setSuccess }) {
   const [funds, setFunds] = useState([]);
   const [fund, setFund] = useState(null);
   const [isLoading, setLoading] = useState(false);
@@ -35,6 +36,10 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   const [showFosSections, setShowFosSections] = useState(false);
   const [expandedPlanSections, setExpandedPlanSections] = useState({});
 
+  const role = user?.role || 'teacher';
+  const canCreateFund = role === 'teacher' || role === 'admin';
+  const canReviewFund = role === 'methodist' || role === 'admin';
+  const canEditFund = Boolean(fund) && (role === 'admin' || (role === 'teacher' && !LOCKED_STATUSES.has(fund.status)));
   const validation = fund?.validation || {};
   const enabledSections = useMemo(() => fund?.sections?.filter((section) => section.enabled) || [], [fund]);
   const generatedItems = useMemo(
@@ -71,7 +76,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   }
 
   async function createFund() {
-    if (!program?.program_id) return;
+    if (!program?.program_id || !canCreateFund) return;
     setCreating(true);
     setError('');
     setSuccess('');
@@ -119,6 +124,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   }
 
   function updateSection(sectionCode, patch) {
+    if (!canEditFund) return;
     setFund((current) => ({
       ...current,
       sections: current.sections.map((section) => (
@@ -137,6 +143,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   }
 
   function applyCompactPlanPreset() {
+    if (!canEditFund) return;
     setFund((current) => ({
       ...current,
       sections: current.sections.map((section) => ({
@@ -149,18 +156,20 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
   }
 
   function updateTitle(value) {
+    if (!canEditFund) return;
     setFund((current) => ({ ...current, title: value }));
     setHasUnsavedChanges(true);
   }
 
   function updateDisciplineName(value) {
+    if (!canEditFund) return;
     setFund((current) => ({ ...current, discipline_name: value }));
     setDisciplineName(value);
     setHasUnsavedChanges(true);
   }
 
   async function saveFund() {
-    if (!fund?.fund_id) return;
+    if (!fund?.fund_id || !canEditFund) return;
     setSaving(true);
     setError('');
     setSuccess('');
@@ -200,6 +209,20 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
     }
   }
 
+  async function changeFundStatus(status) {
+    if (!fund?.fund_id || hasUnsavedChanges) return;
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.put(`/api/assessment-funds/${fund.fund_id}`, { status });
+      setFund(response.data);
+      await loadFunds();
+      setSuccess(statusSuccessMessage(status));
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось изменить статус ФОС.');
+    }
+  }
+
   return (
     <section className="card fosCard">
       <div className="sectionHeader">
@@ -212,13 +235,15 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
           <button className="secondary" type="button" onClick={loadFunds} disabled={isLoading}>
             {isLoading ? 'Обновляем...' : 'Обновить список'}
           </button>
-          <button className="primary" type="button" onClick={createFund} disabled={isCreating}>
-            {isCreating ? 'Формируем...' : 'Создать проект ФОС'}
-          </button>
+          {canCreateFund && (
+            <button className="primary" type="button" onClick={createFund} disabled={isCreating}>
+              {isCreating ? 'Формируем...' : 'Создать проект ФОС'}
+            </button>
+          )}
         </div>
       </div>
 
-      {!fund && (
+      {!fund && canCreateFund && (
         <div className="fosIntro">
           <label>
             Наименование дисциплины
@@ -231,6 +256,8 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
           <p className="muted">После создания система сформирует паспорт ФОС, матрицу компетенций и перечень обязательных разделов.</p>
         </div>
       )}
+
+      {!fund && !canCreateFund && <div className="notice">Методист открывает уже созданные преподавателем ФОС из истории и выполняет проверку без редактирования структуры.</div>}
 
       {funds.length > 0 && (
         <div className="fosHistory">
@@ -251,23 +278,27 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
           <div className="fosToolbar">
             <label>
               Название документа
-              <input value={fund.title} onChange={(event) => updateTitle(event.target.value)} />
+              <input value={fund.title} onChange={(event) => updateTitle(event.target.value)} disabled={!canEditFund} />
             </label>
             <label>
               Дисциплина
-              <input value={fund.discipline_name} onChange={(event) => updateDisciplineName(event.target.value)} />
+              <input value={fund.discipline_name} onChange={(event) => updateDisciplineName(event.target.value)} disabled={!canEditFund} />
             </label>
             <div className="actionGroup">
-              <button className="secondary" type="button" onClick={applyCompactPlanPreset}>План 10/15</button>
+              {canEditFund && <button className="secondary" type="button" onClick={applyCompactPlanPreset}>План 10/15</button>}
               <button className="secondary" type="button" onClick={validateFund} disabled={isValidating || hasUnsavedChanges}>
                 {isValidating ? 'Проверяем...' : 'Проверить структуру'}
               </button>
-              <button className="primary" type="button" onClick={saveFund} disabled={isSaving || !hasUnsavedChanges}>
-                {isSaving ? 'Сохраняем...' : 'Сохранить ФОС'}
-              </button>
+              {canEditFund && (
+                <button className="primary" type="button" onClick={saveFund} disabled={isSaving || !hasUnsavedChanges}>
+                  {isSaving ? 'Сохраняем...' : 'Сохранить ФОС'}
+                </button>
+              )}
             </div>
           </div>
 
+          <FundWorkflow fund={fund} canEdit={canEditFund} canReview={canReviewFund} hasUnsavedChanges={hasUnsavedChanges} changeFundStatus={changeFundStatus} />
+          {!canEditFund && <div className="notice">Режим просмотра: структура и задания недоступны для редактирования в текущей роли или статусе ФОС.</div>}
           {hasUnsavedChanges && <div className="notice">Есть несохраненные изменения в структуре ФОС. Сохраните их до генерации банка заданий.</div>}
 
           <div className="diagnosticsGrid fosMetricsGrid">
@@ -298,15 +329,17 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
             <div className={`fosAccordionBody ${showFosSections ? 'fosAccordionBodyOpen' : ''}`}>
               <div className="fosWorkspaceHeader">
                 <div>
-                  <h3>Настройка разделов</h3>
-                  <p className="muted">Можно быстро пройти разделы сверху вниз, включить нужные блоки и задать план заданий.</p>
+                  <h3>{canEditFund ? 'Настройка разделов' : 'Просмотр разделов'}</h3>
+                  <p className="muted">{canEditFund ? 'Можно быстро пройти разделы сверху вниз, включить нужные блоки и задать план заданий.' : 'Методист видит структуру ФОС без изменения параметров.'}</p>
                 </div>
-                <button className="secondary" type="button" onClick={() => setShowCompetencyMatrix((value) => !value)}>
-                  {showCompetencyMatrix ? 'Скрыть матрицу компетенций' : 'Показать матрицу компетенций'}
-                </button>
+                {canEditFund && (
+                  <button className="secondary" type="button" onClick={() => setShowCompetencyMatrix((value) => !value)}>
+                    {showCompetencyMatrix ? 'Скрыть матрицу компетенций' : 'Показать матрицу компетенций'}
+                  </button>
+                )}
               </div>
 
-              {showCompetencyMatrix && (
+              {showCompetencyMatrix && canEditFund && (
                 <div className="competencyDrawer">
                   <CompetencyMatrixEditor
                     api={api}
@@ -329,23 +362,25 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
                           <strong>{section.title}</strong>
                           <p>{SECTION_LABELS[section.assessment_type] || section.assessment_type}</p>
                         </div>
-                        <label className="toggleLabel">
-                          <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
-                          Включить
-                        </label>
+                        {canEditFund ? (
+                          <label className="toggleLabel">
+                            <input type="checkbox" checked={section.enabled} onChange={(event) => updateSection(section.code, { enabled: event.target.checked })} />
+                            Включить
+                          </label>
+                        ) : <span className="badge">{section.enabled ? 'включен' : 'выключен'}</span>}
                       </div>
                       <p className="muted">{section.description}</p>
                       <div className="fosSectionMetaCompact">
                         <span>Тем: {section.topics.length} · заданий: {section.generated_items || 0}</span>
                         <button className="planToggleButton" type="button" onClick={() => togglePlanSection(section.code)} aria-expanded={isPlanOpen}>
                           <span>План: {section.planned_items}</span>
-                          <strong>{isPlanOpen ? 'Скрыть' : 'Изменить'}</strong>
+                          <strong>{canEditFund ? (isPlanOpen ? 'Скрыть' : 'Изменить') : (isPlanOpen ? 'Скрыть' : 'Посмотреть')}</strong>
                         </button>
                       </div>
                       <div className={`plannedItemsPanel ${isPlanOpen ? 'plannedItemsPanelOpen' : ''}`}>
                         <label>
                           План заданий для раздела
-                          <input type="number" min="0" max="1000" value={section.planned_items} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
+                          <input type="number" min="0" max="1000" value={section.planned_items} disabled={!canEditFund} onChange={(event) => updateSection(section.code, { planned_items: Number(event.target.value) })} />
                         </label>
                       </div>
                     </article>
@@ -360,6 +395,7 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
               api={api}
               fund={fund}
               sections={fund.sections}
+              canEdit={canEditFund}
               setError={setError}
               setSuccess={setSuccess}
               onFundRefresh={refreshCurrentFund}
@@ -367,6 +403,25 @@ function AssessmentFundPanel({ api, program, setError, setSuccess }) {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+function FundWorkflow({ fund, canEdit, canReview, hasUnsavedChanges, changeFundStatus }) {
+  return (
+    <section className="notice">
+      <strong>Статус ФОС: {fundStatusLabel(fund.status)}</strong>
+      <div className="actionGroup">
+        {canEdit && fund.status !== 'in_review' && fund.status !== 'approved' && (
+          <button className="primary" type="button" onClick={() => changeFundStatus('in_review')} disabled={hasUnsavedChanges}>Отправить на проверку</button>
+        )}
+        {canReview && (
+          <>
+            <button className="danger" type="button" onClick={() => changeFundStatus('revision_required')} disabled={hasUnsavedChanges}>Вернуть на доработку</button>
+            <button className="primary" type="button" onClick={() => changeFundStatus('approved')} disabled={hasUnsavedChanges}>Утвердить ФОС</button>
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -383,6 +438,10 @@ function Metric({ value, label }) {
 
 function fundStatusLabel(status) {
   return ({ draft: 'Черновик', generated: 'Сформировано', in_review: 'На проверке', revision_required: 'Требует доработки', approved: 'Утверждено' }[status] || status);
+}
+
+function statusSuccessMessage(status) {
+  return ({ in_review: 'ФОС отправлен на проверку.', revision_required: 'ФОС возвращен на доработку.', approved: 'ФОС утвержден.' }[status] || 'Статус ФОС обновлен.');
 }
 
 export default AssessmentFundPanel;

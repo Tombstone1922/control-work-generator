@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
 
 DEFAULT_CATALOG_PATH = Path(__file__).resolve().parents[1] / "storage" / "discipline_catalog" / "discipline_profiles.json"
@@ -25,7 +26,7 @@ ACTION_VERBS = (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class TopicKnowledgeContext:
     discipline_name: str
     topic: str
@@ -43,9 +44,23 @@ def get_topic_knowledge_context(
     topic: str,
     all_topics: list[str] | None = None,
 ) -> TopicKnowledgeContext:
-    profile = _find_profile(discipline_name, topic, all_topics or [])
+    return _get_topic_knowledge_context_cached(
+        discipline_name or "",
+        topic or "",
+        tuple(all_topics or ()),
+    )
+
+
+@lru_cache(maxsize=4096)
+def _get_topic_knowledge_context_cached(
+    discipline_name: str,
+    topic: str,
+    all_topics_tuple: tuple[str, ...],
+) -> TopicKnowledgeContext:
+    all_topics = list(all_topics_tuple)
+    profile = _find_profile(discipline_name, topic, all_topics)
     if profile:
-        related_topics = _pick_related_topics(topic, profile.get("topics", []), all_topics or [])
+        related_topics = _pick_related_topics(topic, profile.get("topics", []), all_topics)
         raw_outcomes = [str(value).strip() for value in profile.get("learning_outcomes", []) if str(value).strip()]
         outcomes = _normalize_learning_outcomes(raw_outcomes, topic=topic)[:4]
         competencies = [str(value).strip() for value in profile.get("competencies", []) if str(value).strip()]
@@ -61,7 +76,7 @@ def get_topic_knowledge_context(
             source="discipline_catalog",
         )
 
-    related = [value for value in (all_topics or []) if _normalize(value) != _normalize(topic)]
+    related = [value for value in all_topics if _normalize(value) != _normalize(topic)]
     return TopicKnowledgeContext(
         discipline_name=discipline_name,
         topic=topic,
@@ -74,6 +89,7 @@ def get_topic_knowledge_context(
     )
 
 
+@lru_cache(maxsize=1)
 def _load_profiles() -> list[dict]:
     if not DISCIPLINE_CATALOG_PATH.exists():
         return []
@@ -88,31 +104,38 @@ def _load_profiles() -> list[dict]:
     return []
 
 
-def _find_profile(discipline_name: str, topic: str, all_topics: list[str]) -> dict | None:
-    profiles = _load_profiles()
-    if not profiles:
-        return None
-    query = " ".join([discipline_name or "", topic or "", " ".join(all_topics or [])])
-    query_norm = _normalize(query)
-    best_profile = None
-    best_score = 0.0
-    for profile in profiles:
+@lru_cache(maxsize=1)
+def _profile_descriptors() -> tuple[tuple[int, str, str, str], ...]:
+    descriptors = []
+    for index, profile in enumerate(_load_profiles()):
         profile_name = str(profile.get("discipline_name", ""))
         profile_text = " ".join([
             profile_name,
             " ".join(profile.get("topics", [])),
             " ".join(profile.get("learning_outcomes", [])),
         ])
-        score = SequenceMatcher(None, query_norm, _normalize(profile_text[:3000])).ratio()
-        name_norm = _normalize(profile_name)
+        descriptors.append((index, profile_name, _normalize(profile_name), _normalize(profile_text[:3000])))
+    return tuple(descriptors)
+
+
+def _find_profile(discipline_name: str, topic: str, all_topics: list[str]) -> dict | None:
+    profiles = _load_profiles()
+    if not profiles:
+        return None
+    query = " ".join([discipline_name or "", topic or "", " ".join(all_topics or [])])
+    query_norm = _normalize(query)
+    best_index = -1
+    best_score = 0.0
+    for index, profile_name, name_norm, profile_text_norm in _profile_descriptors():
+        score = SequenceMatcher(None, query_norm, profile_text_norm).ratio()
         if name_norm and name_norm in query_norm:
             score += 0.45
         else:
-            score += _token_overlap_score(query, profile_text) * 0.35
+            score += _token_overlap_score(query, profile_name + " " + profile_text_norm) * 0.35
         if score > best_score:
             best_score = score
-            best_profile = profile
-    return best_profile if best_profile and best_score >= 0.18 else None
+            best_index = index
+    return profiles[best_index] if best_index >= 0 and best_score >= 0.18 else None
 
 
 def _pick_related_topics(topic: str, profile_topics: list[str], runtime_topics: list[str]) -> list[str]:

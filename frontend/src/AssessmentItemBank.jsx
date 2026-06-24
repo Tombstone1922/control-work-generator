@@ -30,10 +30,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     [sections],
   );
   const sectionMap = useMemo(() => Object.fromEntries(sections.map((section) => [section.code, section.title])), [sections]);
-  const visibleItems = useMemo(
-    () => selectedSectionCode ? items.filter((item) => item.section_code === selectedSectionCode) : items,
-    [items, selectedSectionCode],
-  );
+  const visibleItems = useMemo(() => selectedSectionCode ? items.filter((item) => item.section_code === selectedSectionCode) : items, [items, selectedSectionCode]);
   const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) || null, [items, selectedItemId]);
   const sourceStats = useMemo(() => items.reduce((acc, item) => {
     const key = item.source_kind || 'template';
@@ -117,7 +114,10 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setError('');
     setSuccess('');
     try {
-      const response = await api.post(`/api/assessment-items/${fund.fund_id}/generate`, {
+      const endpoint = generationMode === 'qwen_seed_good'
+        ? `/api/qwen-training/${fund.fund_id}/generate-good`
+        : `/api/assessment-items/${fund.fund_id}/generate`;
+      const response = await api.post(endpoint, {
         section_code: selectedSectionCode || null,
         replace_existing: replaceExisting,
         max_items_per_section: Number(maxItemsPerSection),
@@ -133,6 +133,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
       await onFundRefresh();
       await validateItems(false);
       await loadContextSummary();
+      await loadTrainingStats();
       setSuccess(successMessage(response.data.used_mode));
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сформировать банк заданий.');
@@ -284,7 +285,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
       <div className="itemBankToolbar simplifiedGenerationToolbar">
         <label>Раздел ФОС<select value={selectedSectionCode} onChange={(event) => setSelectedSectionCode(event.target.value)}><option value="">Все активные разделы</option>{enabledSections.map((section) => <option key={section.code} value={section.code}>{section.title}</option>)}</select></label>
         {canEdit && <label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} />Заменить старые задания</label>}
-        {canEdit && <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : 'Сформировать задания'}</button>}
+        {canEdit && <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : generationMode === 'qwen_seed_good' ? 'Сформировать и обучить' : 'Сформировать задания'}</button>}
       </div>
 
       <div className="itemBankStats"><span>Всего заданий: <strong>{items.length}</strong></span><span>В выбранном разделе: <strong>{visibleItems.length}</strong></span></div>
@@ -346,18 +347,19 @@ function CompactList({ title, values }) {
 
 function LearningModePanel({ generationMode, setGenerationMode, stats }) {
   const hasGoodExamples = (stats?.good_examples || 0) > 0;
-  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{!hasGoodExamples && generationMode !== 'template' && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
+  const isQwenSeed = generationMode === 'qwen_seed_good';
+  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="qwen_seed_good">Qwen-only: сгенерировать и пометить как хорошие</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{isQwenSeed && <div className="notice">Этот режим нужен для разового наполнения обучающей выборки: Qwen формирует задания, банк обновляется, а все результаты автоматически сохраняются как хорошие примеры.</div>}{!hasGoodExamples && generationMode !== 'template' && !isQwenSeed && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
 }
 
 function GenerationSummary({ generation }) {
-  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{generationModeLabel(generation.requested_mode)}</strong></span><span>Использованный режим: <strong>{generationModeLabel(generation.used_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{generation.narrow_llm_generated_items || 0}</strong></span><span>По примерам: <strong>{generation.learned_generated_items || 0}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items || 0}</strong></span>{generation.model_version && <span>Версия модели: <strong>{generation.model_version}</strong></span>}</div><GenerationProfiling profiling={generation.profiling} />{generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
+  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{generationModeLabel(generation.requested_mode)}</strong></span><span>Использованный режим: <strong>{generationModeLabel(generation.used_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{generation.narrow_llm_generated_items || 0}</strong></span><span>По примерам: <strong>{generation.learned_generated_items || 0}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items || 0}</strong></span>{generation.profiling?.auto_good_examples !== undefined && <span>Авто-good: <strong>{generation.profiling.auto_good_examples || 0}</strong></span>}{generation.model_version && <span>Версия модели: <strong>{generation.model_version}</strong></span>}</div><GenerationProfiling profiling={generation.profiling} />{generation.warnings?.length > 0 && <div className="notice"><ul>{generation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
 }
 
 function GenerationProfiling({ profiling }) {
   if (!profiling || !profiling.total_ms) return null;
   const llm = profiling.local_llm || {};
   const stages = profiling.stages_ms || {};
-  return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>Qwen: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span></div><div className="itemBankStats"><span>Qwen режим: <strong>{llm.mode || '—'}</strong></span><span>Запросов Qwen: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено Qwen: <strong>{llm.refined_items || 0}</strong></span><span>Пропущено по типу: <strong>{llm.skipped_by_type || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов Qwen: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
+  return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>Qwen: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span>{stages.save_good_training_examples !== undefined && <span>Сохранение good: <strong>{formatMs(stages.save_good_training_examples)}</strong></span>}</div><div className="itemBankStats"><span>Qwen режим: <strong>{llm.mode || '—'}</strong></span><span>Запросов Qwen: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено Qwen: <strong>{llm.refined_items || 0}</strong></span><span>Пропущено по типу: <strong>{llm.skipped_by_type || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов Qwen: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
 }
 
 function ValidationDashboard({ validation, sectionMap }) {
@@ -376,6 +378,7 @@ function downloadBlob(data, filename) {
 }
 
 function successMessage(usedMode) {
+  if (usedMode === 'qwen_seed_good') return 'Qwen-only генерация завершена: задания добавлены в банк и сохранены как хорошие примеры.';
   if (usedMode === 'narrow_llm') return 'Банк заданий сформирован интеллектуальным генератором ФОС.';
   if (usedMode === 'learned') return 'Банк заданий сформирован на основе обучающей выборки.';
   if (usedMode === 'hybrid') return 'Банк заданий сформирован гибридно: интеллектуальный генератор + контекстный модуль.';
@@ -389,6 +392,7 @@ function generationModeLabel(value) {
     hybrid: 'Интеллектуальный генератор + резерв',
     learned: 'По экспертным примерам',
     template: 'Базовый шаблонный режим',
+    qwen_seed_good: 'Qwen-only обучающая генерация',
   }[value] || value || '—');
 }
 
@@ -406,6 +410,7 @@ function sourceKindLabel(value) {
     smart_builder: 'smart-builder',
     knowledge_context: 'context-module',
     local_llm_qwen3: 'Qwen-refiner',
+    qwen_seed_good: 'Qwen-good',
     learned_example: 'по экспертному примеру',
     om_reference: 'OM/ФОС',
     narrow_llm: 'интеллектуальный ФОС',
@@ -416,6 +421,7 @@ function sourceKindLabel(value) {
 function sourceKindClass(value) {
   return ({
     local_llm_qwen3: 'sourceQwen',
+    qwen_seed_good: 'sourceQwen',
     knowledge_context: 'sourceKnowledge',
     smart_builder: 'sourceSmart',
     smart_template: 'sourceSmart',

@@ -77,11 +77,7 @@ def generate_qwen_seed_bank(
     profiling["stages_ms"]["context_generator"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
-    preclean_items, preclean_warnings = postprocess_generated_items(
-        generated,
-        discipline_name=fund.discipline_name,
-        all_topics=topics,
-    )
+    preclean_items, preclean_warnings = postprocess_generated_items(generated, discipline_name=fund.discipline_name, all_topics=topics)
     profiling["stages_ms"]["pre_postprocess"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
@@ -99,11 +95,7 @@ def generate_qwen_seed_bank(
     profiling["items_after_llm"] = len(qwen_items)
 
     stage_started = time.perf_counter()
-    cleaned_items, cleanup_warnings = postprocess_generated_items(
-        qwen_items,
-        discipline_name=fund.discipline_name,
-        all_topics=topics,
-    )
+    cleaned_items, cleanup_warnings = postprocess_generated_items(qwen_items, discipline_name=fund.discipline_name, all_topics=topics)
     qwen_good_items = [
         item.model_copy(update={
             "source_kind": "qwen_seed_good" if item.source_kind == "local_llm_qwen3" else item.source_kind,
@@ -112,26 +104,17 @@ def generate_qwen_seed_bank(
         })
         for item in cleaned_items
     ]
+    generated_ids = {item.id for item in qwen_good_items}
     profiling["stages_ms"]["final_postprocess"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
-    persisted = replace_items_for_sections(
-        db,
-        fund,
-        target_codes,
-        qwen_good_items,
-        payload.replace_existing,
-    )
+    persisted = replace_items_for_sections(db, fund, target_codes, qwen_good_items, payload.replace_existing)
     profiling["stages_ms"]["persist_items"] = _elapsed_ms(stage_started)
-    profiling["items_persisted"] = len(persisted)
+    profiling["items_persisted"] = len([item for item in persisted if item.id in generated_ids])
 
     stage_started = time.perf_counter()
-    examples_count = _create_auto_good_examples(
-        db=db,
-        fund=fund,
-        user=current_user,
-        items=persisted,
-    )
+    seed_items = [item for item in persisted if item.id in generated_ids]
+    examples_count = _create_auto_good_examples(db=db, fund=fund, user=current_user, items=seed_items)
     profiling["stages_ms"]["save_good_training_examples"] = _elapsed_ms(stage_started)
     profiling["auto_good_examples"] = examples_count
     profiling["total_ms"] = _elapsed_ms(total_started)
@@ -147,7 +130,7 @@ def generate_qwen_seed_bank(
         used_mode="qwen_seed_good",
         learned_generated_items=examples_count,
         narrow_llm_generated_items=0,
-        template_generated_items=max(0, len(persisted) - examples_count),
+        template_generated_items=max(0, len(seed_items) - examples_count),
         model_version="qwen-seed-good-v0.1",
         warnings=warnings,
         profiling=profiling,

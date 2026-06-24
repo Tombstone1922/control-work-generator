@@ -347,9 +347,8 @@ function App() {
     <main className="page appShell">
       <section className="hero appHero card">
         <div>
-          <p className="eyebrow">ВКР · закрытый контур · локальная LLM</p>
+          <p className="eyebrow">Фонд Оценочных Средств</p>
           <h1>Формирование ФОС по РПД</h1>
-          <p className="heroText">Рабочая область отделена от администрирования: преподаватель готовит материалы, методист проверяет, администратор управляет ролями.</p>
         </div>
         <div className="userBox">
           <ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} />
@@ -504,11 +503,6 @@ function AdministrationPage({ user, program, params, setParams, updateQuestionTy
           <h2>{user.role === 'admin' ? 'Пользователи, роли и сервисные инструменты' : 'История, диагностика и материалы на проверке'}</h2>
           <p className="muted">{user.role === 'admin' ? 'Администратор может повышать пользователей до методистов или администраторов и управлять доступом.' : 'Сюда вынесены история и дополнительные действия, чтобы рабочая область не превращалась в перегруженную панель.'}</p>
         </div>
-        <div className="systemStatusBox">
-          <strong>Локальная LLM</strong>
-          <span>Qwen: http://127.0.0.1:8081/v1</span>
-          <span>Backend: http://127.0.0.1:8000</span>
-        </div>
       </section>
 
       <section className="adminDashboard">
@@ -558,7 +552,7 @@ function AdministrationPage({ user, program, params, setParams, updateQuestionTy
 }
 
 function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) {
-  return <main className="page authPage"><section className="authCard card"><p className="eyebrow">ВКР · закрытый контур</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>;
+  return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>;
 }
 
 function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) {
@@ -585,11 +579,11 @@ function Workflow({ user, generation, reviewComment, setReviewComment, changeSta
   return null;
 }
 
-function AdminPanel({ currentUser, users, updateRole, toggleUser }) {
+function AdminPanel({ users, updateRole, toggleUser }) {
   const teachers = users.filter((item) => item.role === 'teacher').length;
   const methodists = users.filter((item) => item.role === 'methodist').length;
   const admins = users.filter((item) => item.role === 'admin').length;
-  return <section className="card"><div className="sectionHeader"><div><h2>Администрирование пользователей</h2><p className="muted">Администратор может назначать преподавателей методистами и повышать методистов до администраторов.</p></div><div className="itemBankStats"><span>Преподавателей: <strong>{teachers}</strong></span><span>Методистов: <strong>{methodists}</strong></span><span>Админов: <strong>{admins}</strong></span></div></div><div className="adminList">{users.map((userItem) => <div className="adminRow" key={userItem.id}><div><strong>{userItem.full_name}</strong><span>{userItem.email}</span><span>{roleLabel(userItem.role)} · {userItem.is_active ? 'активен' : 'заблокирован'}</span></div><select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select><div className="actionGroup">{userItem.role === 'teacher' && <button className="primary smallButton" onClick={() => updateRole(userItem.id, 'methodist')}>Сделать методистом</button>}{userItem.role === 'methodist' && <button className="primary smallButton" onClick={() => updateRole(userItem.id, 'admin')}>Повысить до админа</button>}{userItem.role === 'admin' && userItem.id !== currentUser.id && <button className="secondary smallButton" onClick={() => updateRole(userItem.id, 'methodist')}>Понизить до методиста</button>}<button className="secondary" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div></div>)}</div></section>;
+  return <section className="card"><div className="sectionHeader"><div><h2>Администрирование пользователей</h2><p className="muted">Роль пользователя изменяется через выпадающий список. Администратор может назначить преподавателя методистом или повысить методиста до администратора.</p></div><div className="itemBankStats"><span>Преподавателей: <strong>{teachers}</strong></span><span>Методистов: <strong>{methodists}</strong></span><span>Админов: <strong>{admins}</strong></span></div></div><div className="adminList">{users.map((userItem) => <div className="adminRow" key={userItem.id}><div><strong>{userItem.full_name}</strong><span>{userItem.email}</span><span>{roleLabel(userItem.role)} · {userItem.is_active ? 'активен' : 'заблокирован'}</span></div><select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select><div className="actionGroup"><button className="secondary" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div></div>)}</div></section>;
 }
 
 function List({ title, items }) { return <div><h3>{title}</h3>{items.length ? <ul className="compactList">{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">Не найдено</p>}</div>; }

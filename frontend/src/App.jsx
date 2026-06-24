@@ -5,6 +5,7 @@ import AssessmentFundPanel from './AssessmentFundPanel.jsx';
 const API_URL = 'http://127.0.0.1:8000';
 const TOKEN_KEY = 'control_work_generator_token';
 const USER_KEY = 'control_work_generator_user';
+const LOCKED_STATUSES = new Set(['in_review', 'approved']);
 
 const defaultGenerationParams = {
   variants_count: 2,
@@ -45,6 +46,8 @@ function App() {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }), [token]);
 
+  const canEditWorkspace = user?.role === 'teacher' || user?.role === 'admin';
+
   useEffect(() => {
     if (!token) return;
     api.get('/api/auth/me')
@@ -53,6 +56,7 @@ function App() {
         localStorage.setItem(USER_KEY, JSON.stringify(response.data));
         await loadHistory();
         if (response.data.role === 'admin') await loadAdminUsers();
+        else setAdminUsers([]);
       })
       .catch(() => logout(false));
   }, [token]);
@@ -119,6 +123,7 @@ function App() {
 
   async function uploadProgram(event) {
     event.preventDefault();
+    if (!canEditWorkspace) return setError('Загрузка РПД доступна преподавателю или администратору.');
     if (!file) return setError('Выберите файл РПД в формате DOCX, PDF или TXT.');
     setError('');
     setSuccess('');
@@ -141,7 +146,7 @@ function App() {
   }
 
   async function reanalyzeProgram() {
-    if (!program?.program_id) return;
+    if (!program?.program_id || !canEditWorkspace) return;
     setError('');
     setSuccess('');
     setReanalyzing(true);
@@ -158,6 +163,7 @@ function App() {
   }
 
   async function runGeneration() {
+    if (!canEditWorkspace) return setError('Генерация доступна преподавателю или администратору.');
     if (!program?.program_id) return setError('Сначала загрузите РПД.');
     setError('');
     setSuccess('');
@@ -277,6 +283,7 @@ function App() {
     try {
       await api.patch(`/api/admin/users/${userId}/role`, { role });
       await loadAdminUsers();
+      setSuccess(roleChangeMessage(role));
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось изменить роль.');
     }
@@ -286,6 +293,7 @@ function App() {
     try {
       await api.patch(`/api/admin/users/${userId}/active`, { is_active: !isActive });
       await loadAdminUsers();
+      setSuccess(isActive ? 'Пользователь заблокирован.' : 'Пользователь разблокирован.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось изменить состояние пользователя.');
     }
@@ -328,7 +336,7 @@ function App() {
         <div>
           <p className="eyebrow">ВКР · закрытый контур · локальная LLM</p>
           <h1>Формирование ФОС по РПД</h1>
-          <p className="heroText">Рабочая область отделена от администрирования: в основном сценарии остаются только РПД, ФОС, банк заданий и экспорт.</p>
+          <p className="heroText">Рабочая область отделена от администрирования: преподаватель готовит материалы, методист проверяет, администратор управляет ролями.</p>
         </div>
         <div className="userBox">
           <strong>{user.full_name}</strong>
@@ -340,12 +348,12 @@ function App() {
 
       <nav className="appNav card" aria-label="Основные разделы">
         <button className={activePage === 'workspace' ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={() => setActivePage('workspace')}>
-          <span>Рабочая область</span>
-          <small>РПД, ФОС, задания, экспорт</small>
+          <span>{user.role === 'methodist' ? 'Проверка ФОС' : 'Рабочая область'}</span>
+          <small>{user.role === 'methodist' ? 'РПД, ФОС, банк заданий' : 'РПД, ФОС, задания, экспорт'}</small>
         </button>
         <button className={activePage === 'administration' ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={() => setActivePage('administration')}>
-          <span>Администрирование</span>
-          <small>История, пользователи, сервисные инструменты</small>
+          <span>{user.role === 'admin' ? 'Администрирование' : 'История и сервис'}</span>
+          <small>{user.role === 'admin' ? 'История, пользователи, роли' : 'История, диагностика, сервисные инструменты'}</small>
         </button>
       </nav>
 
@@ -354,6 +362,7 @@ function App() {
 
       {activePage === 'workspace' ? (
         <WorkspacePage
+          user={user}
           file={file}
           setFile={setFile}
           program={program}
@@ -401,14 +410,15 @@ function App() {
   );
 }
 
-function WorkspacePage({ file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram, api, setError, setSuccess }) {
+function WorkspacePage({ user, file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram, api, setError, setSuccess }) {
+  const canEdit = user.role === 'teacher' || user.role === 'admin';
   return (
     <div className="workspacePage">
       <section className="pageIntro card">
         <div>
-          <p className="eyebrow">Основной сценарий</p>
-          <h2>РПД → структура ФОС → банк заданий</h2>
-          <p className="muted">Здесь оставлены только действия, которые нужны преподавателю при подготовке оценочных материалов.</p>
+          <p className="eyebrow">{canEdit ? 'Основной сценарий' : 'Сценарий проверки'}</p>
+          <h2>{canEdit ? 'РПД → структура ФОС → банк заданий' : 'Проверка РПД, ФОС и банка заданий'}</h2>
+          <p className="muted">{canEdit ? 'Здесь оставлены только действия, которые нужны преподавателю при подготовке оценочных материалов.' : 'Методист видит материалы преподавателей, проверяет структуру ФОС и принимает решение по статусу.'}</p>
         </div>
         <div className="stepPills">
           <span>1. РПД</span>
@@ -419,14 +429,22 @@ function WorkspacePage({ file, setFile, program, isUploading, uploadProgram, isR
       </section>
 
       <section className="workspaceGrid">
-        <form className="card uploadCard" onSubmit={uploadProgram}>
-          <p className="eyebrow">Загрузка</p>
-          <h2>Рабочая программа дисциплины</h2>
-          <p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p>
-          <input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-          <button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>
-          {file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}
-        </form>
+        {canEdit ? (
+          <form className="card uploadCard" onSubmit={uploadProgram}>
+            <p className="eyebrow">Загрузка</p>
+            <h2>Рабочая программа дисциплины</h2>
+            <p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p>
+            <input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            <button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>
+            {file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}
+          </form>
+        ) : (
+          <section className="card uploadCard">
+            <p className="eyebrow">Проверка</p>
+            <h2>Материалы преподавателей</h2>
+            <p className="muted">Методист не загружает и не редактирует РПД. Откройте нужный документ из истории в разделе “История и сервис”.</p>
+          </section>
+        )}
 
         <section className="card currentDocCard">
           <p className="eyebrow">Текущий документ</p>
@@ -438,25 +456,26 @@ function WorkspacePage({ file, setFile, program, isUploading, uploadProgram, isR
               <Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество" />
             </div>
           ) : (
-            <p className="muted">Загрузите РПД или откройте ранее загруженный документ из раздела “Администрирование”.</p>
+            <p className="muted">{canEdit ? 'Загрузите РПД или откройте ранее загруженный документ из раздела “Администрирование”.' : 'Откройте ранее загруженный документ из истории.'}</p>
           )}
         </section>
       </section>
 
-      {program && <ProgramAnalysisSection program={program} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}
-      {program && <AssessmentFundPanel api={api} program={program} setError={setError} setSuccess={setSuccess} />}
+      {program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}
+      {program && <AssessmentFundPanel api={api} program={program} user={user} setError={setError} setSuccess={setSuccess} />}
     </div>
   );
 }
 
 function AdministrationPage({ user, program, params, setParams, updateQuestionTypes, runGeneration, isGenerating, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openGeneration, generation, reviewComment, setReviewComment, hasUnsavedChanges, isSaving, regeneratingQuestionId, saveEditedGeneration, regenerateQuestion, deleteQuestion, updateQuestion, changeStatus, downloadDocx, adminUsers, updateAdminUserRole, toggleAdminUser }) {
+  const canUseServiceGeneration = user.role === 'teacher' || user.role === 'admin';
   return (
     <div className="adminPage">
       <section className="pageIntro card adminIntro">
         <div>
-          <p className="eyebrow">Администрирование и сервис</p>
-          <h2>История, диагностика и дополнительные инструменты</h2>
-          <p className="muted">Сюда вынесены второстепенные действия, чтобы рабочая область не превращалась в перегруженную панель.</p>
+          <p className="eyebrow">{user.role === 'admin' ? 'Администрирование и права' : 'История и проверка'}</p>
+          <h2>{user.role === 'admin' ? 'Пользователи, роли и сервисные инструменты' : 'История, диагностика и материалы на проверке'}</h2>
+          <p className="muted">{user.role === 'admin' ? 'Администратор может повышать пользователей до методистов или администраторов и управлять доступом.' : 'Сюда вынесены история и дополнительные действия, чтобы рабочая область не превращалась в перегруженную панель.'}</p>
         </div>
         <div className="systemStatusBox">
           <strong>Локальная LLM</strong>
@@ -466,18 +485,20 @@ function AdministrationPage({ user, program, params, setParams, updateQuestionTy
       </section>
 
       <section className="adminDashboard">
-        <section className="card quickGenerationCard">
-          <p className="eyebrow">Сервисный режим</p>
-          <h2>Быстрая генерация контрольной</h2>
-          <p className="muted">Старый сценарий генерации контрольной работы оставлен как дополнительный инструмент. Основная работа с ФОС находится на первой странице.</p>
-          <div className="miniGrid adminMiniGrid">
-            <label>Вариантов<input type="number" min="1" max="20" value={params.variants_count} onChange={(event) => setParams({ ...params, variants_count: Number(event.target.value) })} /></label>
-            <label>Заданий<input type="number" min="1" max="50" value={params.questions_per_variant} onChange={(event) => setParams({ ...params, questions_per_variant: Number(event.target.value) })} /></label>
-            <label>Сложность<select value={params.difficulty} onChange={(event) => setParams({ ...params, difficulty: event.target.value })}><option value="easy">Базовый</option><option value="medium">Средний</option><option value="hard">Повышенный</option></select></label>
-          </div>
-          <label>Типы заданий<input value={params.question_types.join(', ')} onChange={(event) => updateQuestionTypes(event.target.value)} /></label>
-          <button className="primary" type="button" onClick={runGeneration} disabled={isGenerating || !program}>{isGenerating ? 'Генерируем...' : 'Сформировать контрольную'}</button>
-        </section>
+        {canUseServiceGeneration && (
+          <section className="card quickGenerationCard">
+            <p className="eyebrow">Сервисный режим</p>
+            <h2>Быстрая генерация контрольной</h2>
+            <p className="muted">Старый сценарий генерации контрольной работы оставлен как дополнительный инструмент. Основная работа с ФОС находится на первой странице.</p>
+            <div className="miniGrid adminMiniGrid">
+              <label>Вариантов<input type="number" min="1" max="20" value={params.variants_count} onChange={(event) => setParams({ ...params, variants_count: Number(event.target.value) })} /></label>
+              <label>Заданий<input type="number" min="1" max="50" value={params.questions_per_variant} onChange={(event) => setParams({ ...params, questions_per_variant: Number(event.target.value) })} /></label>
+              <label>Сложность<select value={params.difficulty} onChange={(event) => setParams({ ...params, difficulty: event.target.value })}><option value="easy">Базовый</option><option value="medium">Средний</option><option value="hard">Повышенный</option></select></label>
+            </div>
+            <label>Типы заданий<input value={params.question_types.join(', ')} onChange={(event) => updateQuestionTypes(event.target.value)} /></label>
+            <button className="primary" type="button" onClick={runGeneration} disabled={isGenerating || !program}>{isGenerating ? 'Генерируем...' : 'Сформировать контрольную'}</button>
+          </section>
+        )}
 
         <section className="card systemCard">
           <p className="eyebrow">Техническая подсказка</p>
@@ -504,7 +525,7 @@ function AdministrationPage({ user, program, params, setParams, updateQuestionTy
       </section>
 
       {generation && <GenerationEditor generation={generation} user={user} reviewComment={reviewComment} setReviewComment={setReviewComment} hasUnsavedChanges={hasUnsavedChanges} isSaving={isSaving} regeneratingQuestionId={regeneratingQuestionId} saveEditedGeneration={saveEditedGeneration} regenerateQuestion={regenerateQuestion} deleteQuestion={deleteQuestion} updateQuestion={updateQuestion} changeStatus={changeStatus} downloadDocx={downloadDocx} />}
-      {user.role === 'admin' && <AdminPanel users={adminUsers} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}
+      {user.role === 'admin' && <AdminPanel currentUser={user} users={adminUsers} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}
     </div>
   );
 }
@@ -513,30 +534,41 @@ function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, 
   return <main className="page authPage"><section className="authCard card"><p className="eyebrow">ВКР · закрытый контур</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>;
 }
 
-function ProgramAnalysisSection({ program, isReanalyzing, reanalyzeProgram }) {
+function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) {
   const report = program.analysis_report || {};
   const diagnostics = report.diagnostics || {};
-  return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div><button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button></div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div><div className="analysisDetails"><List title="Распознанные разделы документа" items={report.detected_sections || []} /><List title="Исходные строки для тем" items={report.topic_sources || []} /></div></section>;
+  return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div>{canEdit && <button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button>}</div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div><div className="analysisDetails"><List title="Распознанные разделы документа" items={report.detected_sections || []} /><List title="Исходные строки для тем" items={report.topic_sources || []} /></div></section>;
 }
 
 function Metric({ value, label }) { return <div className="metric"><strong>{value}</strong><span>{label}</span></div>; }
 
 function GenerationEditor({ generation, user, reviewComment, setReviewComment, hasUnsavedChanges, isSaving, regeneratingQuestionId, saveEditedGeneration, regenerateQuestion, deleteQuestion, updateQuestion, changeStatus, downloadDocx }) {
-  return <section className="card"><div className="sectionHeader"><div><h2>Сформированная контрольная работа</h2><span className="badge">{statusLabel(generation.status)}</span></div><div className="actionGroup"><button className="secondary" onClick={saveEditedGeneration} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить изменения'}</button><button className="download" onClick={downloadDocx} disabled={hasUnsavedChanges}>Скачать DOCX</button></div></div>{generation.review_comment && <div className="notice">Комментарий проверяющего: {generation.review_comment}</div>}<div className="quality"><div><strong>{generation.quality_report.topic_coverage}</strong><span>Покрытие тем</span></div><div><strong>{generation.quality_report.duplicate_rate}</strong><span>Доля дублей</span></div><div><strong>{generation.quality_report.total_questions}</strong><span>Всего заданий</span></div></div><Workflow user={user} reviewComment={reviewComment} setReviewComment={setReviewComment} changeStatus={changeStatus} /><div className="variants">{generation.variants.map((variant) => <article className="variant" key={variant.variant_number}><h3>Вариант {variant.variant_number}</h3>{variant.questions.map((question, index) => <div className="question editorQuestion" key={question.id}><div className="questionTopline"><strong>Задание {index + 1}</strong><div className="questionActions"><button className="secondary smallButton" onClick={() => regenerateQuestion(question.id)} disabled={regeneratingQuestionId === question.id || hasUnsavedChanges}>{regeneratingQuestionId === question.id ? 'Генерируем...' : 'Перегенерировать'}</button><button className="danger" onClick={() => deleteQuestion(variant.variant_number, question.id)}>Удалить</button></div></div><label>Текст<textarea value={question.text} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'text', event.target.value)} /></label><div className="miniGrid"><label>Тема<input value={question.topic} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'topic', event.target.value)} /></label><label>Тип<select value={question.type} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'type', event.target.value)}><option value="open">open</option><option value="test">test</option><option value="practice">practice</option></select></label><label>Сложность<select value={question.difficulty} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'difficulty', event.target.value)}><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option></select></label></div></div>)}</article>)}</div></section>;
+  const canEdit = user.role === 'admin' || (user.role === 'teacher' && !LOCKED_STATUSES.has(generation.status));
+  return <section className="card"><div className="sectionHeader"><div><h2>{canEdit ? 'Сформированная контрольная работа' : 'Просмотр контрольной работы'}</h2><span className="badge">{statusLabel(generation.status)}</span></div><div className="actionGroup">{canEdit && <button className="secondary" onClick={saveEditedGeneration} disabled={!hasUnsavedChanges || isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить изменения'}</button>}<button className="download" onClick={downloadDocx} disabled={hasUnsavedChanges}>Скачать DOCX</button></div></div>{generation.review_comment && <div className="notice">Комментарий проверяющего: {generation.review_comment}</div>}<div className="quality"><div><strong>{generation.quality_report.topic_coverage}</strong><span>Покрытие тем</span></div><div><strong>{generation.quality_report.duplicate_rate}</strong><span>Доля дублей</span></div><div><strong>{generation.quality_report.total_questions}</strong><span>Всего заданий</span></div></div><Workflow user={user} generation={generation} reviewComment={reviewComment} setReviewComment={setReviewComment} changeStatus={changeStatus} /><div className="variants">{generation.variants.map((variant) => <article className="variant" key={variant.variant_number}><h3>Вариант {variant.variant_number}</h3>{variant.questions.map((question, index) => <div className="question editorQuestion" key={question.id}><div className="questionTopline"><strong>Задание {index + 1}</strong>{canEdit && <div className="questionActions"><button className="secondary smallButton" onClick={() => regenerateQuestion(question.id)} disabled={regeneratingQuestionId === question.id || hasUnsavedChanges}>{regeneratingQuestionId === question.id ? 'Генерируем...' : 'Перегенерировать'}</button><button className="danger" onClick={() => deleteQuestion(variant.variant_number, question.id)}>Удалить</button></div>}</div><label>Текст<textarea value={question.text} readOnly={!canEdit} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'text', event.target.value)} /></label><div className="miniGrid"><label>Тема<input value={question.topic} disabled={!canEdit} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'topic', event.target.value)} /></label><label>Тип<select value={question.type} disabled={!canEdit} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'type', event.target.value)}><option value="open">open</option><option value="test">test</option><option value="practice">practice</option></select></label><label>Сложность<select value={question.difficulty} disabled={!canEdit} onChange={(event) => updateQuestion(variant.variant_number, question.id, 'difficulty', event.target.value)}><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option></select></label></div></div>)}</article>)}</div></section>;
 }
 
-function Workflow({ user, reviewComment, setReviewComment, changeStatus }) {
-  if (user.role === 'teacher') return <div className="workflow"><button className="primary" onClick={() => changeStatus('in_review')}>Отправить на проверку</button></div>;
-  return <div className="workflow"><label>Комментарий проверяющего<textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} /></label><div className="actionGroup"><button className="danger" onClick={() => changeStatus('revision_required')}>Требует доработки</button><button className="primary" onClick={() => changeStatus('approved')}>Утвердить</button></div></div>;
+function Workflow({ user, generation, reviewComment, setReviewComment, changeStatus }) {
+  if (user.role === 'teacher') {
+    if (LOCKED_STATUSES.has(generation.status)) return <div className="notice">Материал отправлен на проверку или утвержден. Редактирование закрыто.</div>;
+    return <div className="workflow"><button className="primary" onClick={() => changeStatus('in_review')}>Отправить на проверку</button></div>;
+  }
+  if (user.role === 'methodist' || user.role === 'admin') {
+    return <div className="workflow"><label>Комментарий проверяющего<textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} /></label><div className="actionGroup"><button className="danger" onClick={() => changeStatus('revision_required')}>Требует доработки</button><button className="primary" onClick={() => changeStatus('approved')}>Утвердить</button></div></div>;
+  }
+  return null;
 }
 
-function AdminPanel({ users, updateRole, toggleUser }) {
-  return <section className="card"><h2>Администрирование пользователей</h2><div className="adminList">{users.map((userItem) => <div className="adminRow" key={userItem.id}><div><strong>{userItem.full_name}</strong><span>{userItem.email}</span></div><select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select><button className="secondary" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div>)}</div></section>;
+function AdminPanel({ currentUser, users, updateRole, toggleUser }) {
+  const teachers = users.filter((item) => item.role === 'teacher').length;
+  const methodists = users.filter((item) => item.role === 'methodist').length;
+  const admins = users.filter((item) => item.role === 'admin').length;
+  return <section className="card"><div className="sectionHeader"><div><h2>Администрирование пользователей</h2><p className="muted">Администратор может назначать преподавателей методистами и повышать методистов до администраторов.</p></div><div className="itemBankStats"><span>Преподавателей: <strong>{teachers}</strong></span><span>Методистов: <strong>{methodists}</strong></span><span>Админов: <strong>{admins}</strong></span></div></div><div className="adminList">{users.map((userItem) => <div className="adminRow" key={userItem.id}><div><strong>{userItem.full_name}</strong><span>{userItem.email}</span><span>{roleLabel(userItem.role)} · {userItem.is_active ? 'активен' : 'заблокирован'}</span></div><select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select><div className="actionGroup">{userItem.role === 'teacher' && <button className="primary smallButton" onClick={() => updateRole(userItem.id, 'methodist')}>Сделать методистом</button>}{userItem.role === 'methodist' && <button className="primary smallButton" onClick={() => updateRole(userItem.id, 'admin')}>Повысить до админа</button>}{userItem.role === 'admin' && userItem.id !== currentUser.id && <button className="secondary smallButton" onClick={() => updateRole(userItem.id, 'methodist')}>Понизить до методиста</button>}<button className="secondary" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div></div>)}</div></section>;
 }
 
 function List({ title, items }) { return <div><h3>{title}</h3>{items.length ? <ul className="compactList">{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">Не найдено</p>}</div>; }
 function HistoryList({ title, items, getKey, renderItem, onOpen }) { return <div className="historyColumn"><h3>{title}</h3>{items.length ? <div className="historyItems">{items.slice(0, 8).map((item) => <button className="historyItem" key={getKey(item)} onClick={() => onOpen(item)}>{renderItem(item)}</button>)}</div> : <p className="muted">Пока пусто</p>}</div>; }
 function roleLabel(role) { return ({ teacher: 'преподаватель', methodist: 'методист', admin: 'администратор' }[role] || role); }
 function statusLabel(status) { return ({ generated: 'Сформировано', in_review: 'На проверке', revision_required: 'Требует доработки', approved: 'Утверждено' }[status] || status); }
+function roleChangeMessage(role) { return ({ teacher: 'Права пользователя снижены до преподавателя.', methodist: 'Пользователь назначен методистом.', admin: 'Пользователь повышен до администратора.' }[role] || 'Роль пользователя обновлена.'); }
 
 export default App;

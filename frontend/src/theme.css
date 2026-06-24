@@ -2,6 +2,16 @@
   color-scheme: light;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+.adminRow .actionGroup .smallButton {
+  display: none;
+}
+
 body,
 .card,
 button,
@@ -17,11 +27,11 @@ textarea,
 .alert,
 .success {
   transition:
-    background-color 0.28s ease,
-    background 0.28s ease,
-    border-color 0.28s ease,
-    color 0.28s ease,
-    box-shadow 0.28s ease,
+    background-color 0.24s ease,
+    background 0.24s ease,
+    border-color 0.24s ease,
+    color 0.24s ease,
+    box-shadow 0.24s ease,
     transform 0.18s ease;
 }
 
@@ -74,7 +84,7 @@ textarea,
     radial-gradient(circle at 72% 70%, rgba(255,255,255,0.72) 0 1px, transparent 2px),
     linear-gradient(135deg, rgba(255,255,255,0.25), transparent);
   opacity: 0.85;
-  transition: opacity 0.28s ease;
+  transition: opacity 0.24s ease;
 }
 
 .themeIcon {
@@ -84,7 +94,7 @@ textarea,
   line-height: 1;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0,0,0,0.18);
-  transition: transform 0.28s ease, opacity 0.28s ease;
+  transition: transform 0.24s ease, opacity 0.24s ease;
 }
 
 .themeMoon {
@@ -104,11 +114,11 @@ textarea,
   box-shadow:
     0 6px 14px rgba(82, 101, 143, 0.28),
     inset 0 0 0 1px rgba(255, 255, 255, 0.75);
-  transition: transform 0.34s cubic-bezier(.2,.9,.24,1.2), background 0.28s ease, box-shadow 0.28s ease;
+  transition: transform 0.34s cubic-bezier(.2,.9,.24,1.2), background 0.24s ease, box-shadow 0.24s ease;
 }
 
 .themeToggleDark .themeToggleTrack {
-  background: linear-gradient(135deg, #16213f, #4b5fc7);
+  background: linear-gradient(135deg, #111827, #334155);
 }
 
 .themeToggleDark .themeToggleTrack::before {
@@ -131,18 +141,20 @@ textarea,
     inset 0 0 0 1px rgba(255, 255, 255, 0.76);
 }
 
-body.darkTheme {
+body.darkTheme,
+body.darkTheme #root {
   color-scheme: dark;
   background:
-    radial-gradient(circle at 16% -10%, rgba(73, 101, 255, 0.24), transparent 32%),
-    radial-gradient(circle at 92% 8%, rgba(72, 190, 255, 0.16), transparent 26%),
-    linear-gradient(180deg, #080d1b 0%, #0f172a 45%, #111827 100%);
-  color: #e5edf9;
+    radial-gradient(circle at 16% -8%, rgba(59, 130, 246, 0.10), transparent 30%),
+    radial-gradient(circle at 86% 6%, rgba(14, 165, 233, 0.08), transparent 26%),
+    #0b1020;
+  color: #e5e7eb;
 }
 
 body.darkTheme .page {
+  min-height: 100vh;
   background: transparent;
-  color: #e5edf9;
+  color: #e5e7eb;
 }
 
 body.darkTheme .card,
@@ -151,6 +163,7 @@ body.darkTheme .pageIntro,
 body.darkTheme .uploadCard,
 body.darkTheme .currentDocCard,
 body.darkTheme .historyCard,
+body.darkTheme .historyColumn,
 body.darkTheme .quickGenerationCard,
 body.darkTheme .systemCard,
 body.darkTheme .fosCard,
@@ -171,33 +184,36 @@ body.darkTheme .itemBankList,
 body.darkTheme .competencyDrawer,
 body.darkTheme .adminRow,
 body.darkTheme .sourceContextBox,
-body.darkTheme .trainingFeedback {
-  background: linear-gradient(180deg, rgba(17, 25, 45, 0.94), rgba(12, 19, 36, 0.94));
-  border-color: rgba(116, 142, 205, 0.36);
-  color: #e5edf9;
-  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.28);
+body.darkTheme .trainingFeedback,
+body.darkTheme .workflow,
+body.darkTheme .analysisDetails,
+body.darkTheme .variant,
+body.darkTheme .question,
+body.darkTheme .editorQuestion,
+body.darkTheme .coverageTableWrap {
+  background: #111827;
+  border-color: #263247;
+  color: #e5e7eb;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
 }
 
-body.darkTheme .appHero {
+body.darkTheme .appHero,
+body.darkTheme .adminIntro {
   background:
-    radial-gradient(circle at 8% 18%, rgba(72, 190, 255, 0.16), transparent 30%),
-    linear-gradient(135deg, rgba(22, 33, 63, 0.98), rgba(13, 20, 38, 0.98));
+    linear-gradient(135deg, rgba(17, 24, 39, 0.98), rgba(15, 23, 42, 0.98));
+  border-color: #2b3a55;
 }
 
 body.darkTheme .appNav,
 body.darkTheme .userBox,
+body.darkTheme .systemStatusBox,
 body.darkTheme .metric,
 body.darkTheme .docStats .metric,
 body.darkTheme .historyItem,
 body.darkTheme .fosSection,
 body.darkTheme .fosCompetency,
 body.darkTheme .itemBankListItem,
-body.darkTheme .question,
-body.darkTheme .variant,
 body.darkTheme .plannedItemsPanel label,
-body.darkTheme .coverageTableWrap,
-body.darkTheme .analysisDetails,
-body.darkTheme .systemStatusBox,
 body.darkTheme .sourceMiniStats span,
 body.darkTheme .itemBankStats span,
 body.darkTheme .chipList span,
@@ -205,15 +221,15 @@ body.darkTheme .fosLevelTags span,
 body.darkTheme .stepPills span,
 body.darkTheme .badge,
 body.darkTheme code {
-  background: rgba(21, 32, 58, 0.92);
-  border-color: rgba(116, 142, 205, 0.38);
-  color: #e5edf9;
+  background: #151f32;
+  border-color: #2c3a54;
+  color: #e5e7eb;
 }
 
 body.darkTheme .navTab {
-  background: rgba(18, 28, 51, 0.84);
-  border-color: rgba(116, 142, 205, 0.28);
-  color: #cbd7ee;
+  background: #111827;
+  border-color: #263247;
+  color: #cbd5e1;
 }
 
 body.darkTheme .activeNavTab,
@@ -221,9 +237,9 @@ body.darkTheme .navTab:hover,
 body.darkTheme .activeHistoryItem,
 body.darkTheme .activeItemBankListItem,
 body.darkTheme .fosWorkspaceOpen {
-  background: linear-gradient(135deg, rgba(48, 75, 166, 0.46), rgba(24, 38, 72, 0.94));
-  border-color: rgba(119, 150, 255, 0.7);
-  box-shadow: 0 16px 34px rgba(54, 92, 255, 0.18);
+  background: #17223a;
+  border-color: #3b82f6;
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.16);
 }
 
 body.darkTheme h1,
@@ -234,7 +250,7 @@ body.darkTheme label,
 body.darkTheme .questionTopline strong,
 body.darkTheme .fosAccordionHeader h3,
 body.darkTheme .itemBankListItem strong {
-  color: #f8fbff;
+  color: #f8fafc;
 }
 
 body.darkTheme .muted,
@@ -246,106 +262,112 @@ body.darkTheme .fosSectionMetaCompact,
 body.darkTheme .fosSection p,
 body.darkTheme .compactList,
 body.darkTheme .compactList li {
-  color: #a9b7d8;
+  color: #94a3b8;
 }
 
 body.darkTheme .eyebrow,
 body.darkTheme .sourceBadge,
 body.darkTheme .chipList strong,
 body.darkTheme .compactList strong {
-  color: #8fb5ff;
+  color: #93c5fd;
 }
 
 body.darkTheme input,
 body.darkTheme select,
 body.darkTheme textarea,
 body.darkTheme .fileInput {
-  background: rgba(8, 13, 27, 0.9);
-  border-color: rgba(126, 153, 222, 0.46);
-  color: #edf4ff;
-  caret-color: #9db8ff;
+  background: #0b1220;
+  border-color: #334155;
+  color: #f8fafc;
+  caret-color: #93c5fd;
 }
 
 body.darkTheme input::placeholder,
 body.darkTheme textarea::placeholder {
-  color: #7787a8;
+  color: #64748b;
 }
 
 body.darkTheme input:disabled,
 body.darkTheme select:disabled,
 body.darkTheme textarea[readonly],
 body.darkTheme textarea:disabled {
-  background: rgba(18, 27, 48, 0.68);
-  color: #aab8d3;
-  border-color: rgba(100, 122, 177, 0.32);
+  background: #111827;
+  color: #94a3b8;
+  border-color: #263247;
 }
 
 body.darkTheme .secondary,
 body.darkTheme .planToggleButton,
 body.darkTheme .fosAccordionHeader,
 body.darkTheme .themeToggle {
-  background: rgba(22, 34, 62, 0.95);
-  border-color: rgba(124, 151, 218, 0.46);
-  color: #cfe0ff;
+  background: #111827;
+  border-color: #334155;
+  color: #dbeafe;
 }
 
-body.darkTheme .primary,
-body.darkTheme .download {
-  background: linear-gradient(135deg, #5570ff, #3754d9);
-  color: #ffffff;
-  box-shadow: 0 14px 28px rgba(60, 90, 255, 0.24);
-}
-
-body.darkTheme .danger {
-  background: rgba(127, 29, 29, 0.92);
-  border-color: rgba(248, 113, 113, 0.42);
-  color: #ffe1e1;
-}
-
-body.darkTheme .notice {
-  background: rgba(30, 41, 76, 0.88);
-  border-color: rgba(120, 151, 230, 0.36);
-  color: #dbe7ff;
-}
-
-body.darkTheme .success {
-  background: rgba(5, 84, 67, 0.9);
-  border-color: rgba(45, 212, 191, 0.38);
-  color: #d7fff8;
-}
-
-body.darkTheme .alert {
-  background: rgba(127, 29, 29, 0.88);
-  border-color: rgba(248, 113, 113, 0.42);
-  color: #ffe1e1;
-}
-
-body.darkTheme table,
-body.darkTheme .coverageTable {
-  background: rgba(13, 20, 38, 0.92);
-  color: #e5edf9;
-}
-
-body.darkTheme th,
-body.darkTheme td {
-  border-color: rgba(116, 142, 205, 0.28);
-}
-
-body.darkTheme th {
-  background: rgba(25, 38, 70, 0.96);
-  color: #f8fbff;
-}
-
+body.darkTheme .secondary:hover,
+body.darkTheme .planToggleButton:hover,
 body.darkTheme .fosAccordionHeader:hover,
 body.darkTheme .historyItem:hover,
 body.darkTheme .itemBankListItem:hover,
 body.darkTheme .fosSection:hover {
-  background: rgba(33, 49, 88, 0.98);
-  border-color: rgba(145, 170, 244, 0.68);
+  background: #1e293b;
+  border-color: #3b82f6;
+}
+
+body.darkTheme .primary,
+body.darkTheme .download {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
+}
+
+body.darkTheme .danger {
+  background: #7f1d1d;
+  border-color: #991b1b;
+  color: #fee2e2;
+}
+
+body.darkTheme .notice {
+  background: #131f34;
+  border-color: #334155;
+  color: #dbeafe;
+}
+
+body.darkTheme .success {
+  background: #052e2b;
+  border-color: #0f766e;
+  color: #ccfbf1;
+}
+
+body.darkTheme .alert {
+  background: #450a0a;
+  border-color: #991b1b;
+  color: #fee2e2;
+}
+
+body.darkTheme table,
+body.darkTheme .coverageTable {
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+body.darkTheme th,
+body.darkTheme td {
+  border-color: #263247;
+}
+
+body.darkTheme th {
+  background: #151f32;
+  color: #f8fafc;
 }
 
 body.darkTheme .themeToggle strong {
-  color: #dbe7ff;
+  color: #dbeafe;
+}
+
+body.darkTheme .themeToggle {
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -81,23 +81,40 @@ def refine_items_with_local_llm(
     items: list[AssessmentItemRead],
     discipline_name: str,
     all_topics: list[str],
+    mode_override: str | None = None,
+    skip_types_override: set[str] | None = None,
+    force_rewrite_override: bool | None = None,
+    max_items_override: int | None = None,
+    batch_size_override: int | None = None,
 ) -> tuple[list[AssessmentItemRead], list[str], dict]:
     settings = get_local_llm_settings()
     if not settings.enabled:
         profile = LocalLLMRefinementProfile(enabled=False, requested_items=len(items)).as_dict()
         return items, [], profile
 
-    mode = os.getenv("LOCAL_LLM_REFINEMENT_MODE", "auto").strip().lower()
+    mode = (mode_override or os.getenv("LOCAL_LLM_REFINEMENT_MODE", "auto")).strip().lower()
     if mode in {"off", "disabled", "false", "0", "none"}:
         profile = LocalLLMRefinementProfile(enabled=False, mode="disabled_by_mode", model=settings.model, requested_items=len(items)).as_dict()
         return items, ["Локальная LLM-прокачка отключена режимом LOCAL_LLM_REFINEMENT_MODE."], profile
 
-    max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
-    use_batch = mode == "batch" or (mode in {"auto", "single"} and _should_use_batch(items, max_items))
-    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 4 if use_batch else 1, minimum=1, maximum=10)
+    max_items = max_items_override if max_items_override is not None else _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
+    max_items = max(1, min(max(len(items), 1), int(max_items)))
+    use_batch = mode == "batch" or (mode in {"auto", "single"} and _should_use_batch(items, max_items, skip_types_override))
+    if batch_size_override is not None:
+        batch_size = max(1, min(10, int(batch_size_override)))
+    else:
+        batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 4 if use_batch else 1, minimum=1, maximum=10)
     if not use_batch:
         batch_size = 1
-    return _refine_items_batched(items=items, discipline_name=discipline_name, all_topics=all_topics, batch_size=batch_size, max_items=max_items)
+    return _refine_items_batched(
+        items=items,
+        discipline_name=discipline_name,
+        all_topics=all_topics,
+        batch_size=batch_size,
+        max_items=max_items,
+        skip_types_override=skip_types_override,
+        force_rewrite_override=force_rewrite_override,
+    )
 
 
 def _refine_items_batched(
@@ -107,11 +124,13 @@ def _refine_items_batched(
     all_topics: list[str],
     batch_size: int,
     max_items: int,
+    skip_types_override: set[str] | None = None,
+    force_rewrite_override: bool | None = None,
 ) -> tuple[list[AssessmentItemRead], list[str], dict]:
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
-    skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
-    force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
+    skip_types = skip_types_override if skip_types_override is not None else _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
+    force_rewrite = force_rewrite_override if force_rewrite_override is not None else _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
     started = time.perf_counter()
     profile = LocalLLMRefinementProfile(
         enabled=True,
@@ -295,11 +314,11 @@ def _matches_type_contract(text: str, assessment_type: str, item_type: str) -> b
     return True
 
 
-def _should_use_batch(items: list[AssessmentItemRead], max_items: int) -> bool:
+def _should_use_batch(items: list[AssessmentItemRead], max_items: int, skip_types_override: set[str] | None = None) -> bool:
     if not _env_bool("LOCAL_LLM_AUTO_BATCH", True):
         return False
     min_items = _env_int("LOCAL_LLM_AUTO_BATCH_MIN_ITEMS", 6, minimum=2, maximum=max(len(items), 2))
-    skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
+    skip_types = skip_types_override if skip_types_override is not None else _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
     target_count = 0
     for item in items:
         if _should_skip_item(item, skip_types):

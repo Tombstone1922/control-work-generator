@@ -15,7 +15,8 @@ from app.services.local_llm_client import LocalLLMClient, get_local_llm_settings
 SYSTEM_PROMPT = """
 Ты методист вуза. Улучши оценочные задания по ФОС.
 Не меняй тип задания. Используй только переданный контекст.
-Верни строго JSON без markdown: {"items":[{"index":0,"text":"...","answer":"...","criteria":["...","..."],"uniqueness_reason":"..."}]}.
+Главное поле результата — text. Если answer или criteria не меняются, их можно вернуть коротко.
+Верни строго JSON без markdown: {"items":[{"index":0,"text":"...","answer":"...","criteria":["...","..."]}]}.
 """.strip()
 
 TYPE_CONTRACTS = {
@@ -93,7 +94,7 @@ def refine_items_with_local_llm(
 
     max_items = _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
     use_batch = mode == "batch" or (mode in {"auto", "single"} and _should_use_batch(items, max_items))
-    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 6 if use_batch else 1, minimum=1, maximum=10)
+    batch_size = _env_int("LOCAL_LLM_BATCH_SIZE", 4 if use_batch else 1, minimum=1, maximum=10)
     if not use_batch:
         batch_size = 1
     return _refine_items_batched(items=items, discipline_name=discipline_name, all_topics=all_topics, batch_size=batch_size, max_items=max_items)
@@ -110,7 +111,7 @@ def _refine_items_batched(
     settings = get_local_llm_settings()
     client = LocalLLMClient(settings)
     skip_types = _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
-    force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", False)
+    force_rewrite = _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
     started = time.perf_counter()
     profile = LocalLLMRefinementProfile(
         enabled=True,
@@ -155,23 +156,23 @@ def _refine_items_batched(
                 used_texts.append(item.text)
                 profile.failed_items += 1
                 continue
-            text = candidate["text"]
+            text = _repair_text_for_target_type(candidate["text"], item)
             if not _matches_type_contract(text, item.assessment_type, item.item_type):
                 refined.append(item)
                 used_texts.append(item.text)
                 profile.failed_items += 1
                 continue
-            if not force_rewrite and _too_similar(text, used_texts, threshold=0.88):
+            if not force_rewrite and _too_similar(text, used_texts, threshold=0.90):
                 refined.append(item)
                 used_texts.append(item.text)
                 profile.skipped_similar += 1
                 continue
             updated = item.model_copy(update={
                 "text": text,
-                "answer": candidate["answer"],
-                "criteria": candidate["criteria"],
+                "answer": candidate.get("answer") or item.answer,
+                "criteria": candidate.get("criteria") or item.criteria,
                 "source_kind": "local_llm_qwen3",
-                "source_context": f"Local LLM {profile.mode}; model={settings.model}; batch_size={batch_size}; topic=«{normalize_topic(item.topic)}»."
+                "source_context": f"Local LLM {profile.mode}; model={settings.model}; batch_size={batch_size}; topic=«{normalize_topic(item.topic)}».",
             })
             refined.append(updated)
             used_texts.append(text)
@@ -185,7 +186,7 @@ def _refine_items_batched(
     if profile.skipped_by_type:
         warnings.append(f"Локальная LLM пропустила быстрые типы заданий: {profile.skipped_by_type}.")
     if profile.failed_items:
-        warnings.append(f"Локальная LLM не вернула корректный JSON или нарушила тип задания: {profile.failed_items}; оставлены базовые задания.")
+        warnings.append(f"Локальная LLM не вернула пригодную формулировку для части заданий: {profile.failed_items}; оставлены базовые задания.")
     return refined, warnings, profile.as_dict()
 
 
@@ -201,24 +202,24 @@ def _build_prompt(*, batch: list[AssessmentItemRead], batch_start: int, discipli
             "type_contract": _type_contract(item.assessment_type, item.item_type),
             "difficulty": item.difficulty,
             "competency_code": item.competency_code,
-            "indicator": _trim(item.indicator, 140),
-            "base_task": {"text": _trim(item.text, 260), "answer": _trim(item.answer, 120), "criteria": item.criteria[:3]},
+            "indicator": _trim(item.indicator, 120),
+            "base_task": {"text": _trim(item.text, 240), "answer": _trim(item.answer, 80), "criteria": item.criteria[:2]},
             "knowledge_context": {
                 "related_topics": context.related_topics[:2],
-                "learning_outcomes": [_trim(value, 110) for value in context.learning_outcomes[:2]],
-                "key_terms": context.key_terms[:5],
+                "learning_outcomes": [_trim(value, 90) for value in context.learning_outcomes[:1]],
+                "key_terms": context.key_terms[:4],
                 "source": context.source,
             },
         })
     payload = {
         "discipline_name": discipline_name,
-        "already_created_tasks_do_not_repeat": [_trim(value, 130) for value in used_texts],
+        "do_not_repeat": [_trim(value, 100) for value in used_texts],
         "items": payload_items,
         "requirements": [
-            "Для каждого item верни один выходной item с тем же index.",
+            "Верни один item на каждый входной item с тем же index.",
             "Строго соблюдай type_contract.",
-            "Ответ и критерии сделай короткими.",
-            "Верни только JSON по схеме из system prompt.",
+            "Можно улучшить только text; answer и criteria сделай короткими или оставь близкими к базовым.",
+            "Только JSON.",
         ],
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -250,15 +251,33 @@ def _sanitize_llm_result(data: dict) -> dict | None:
     if not isinstance(criteria_raw, list):
         criteria_raw = []
     criteria = [_clean_text(item) for item in criteria_raw if _clean_text(item)]
-    if len(text) < 25 or len(text) > 1000 or len(answer) < 10 or len(criteria) < 2 or _looks_like_meta_text(text):
+    if len(text) < 25 or len(text) > 1000 or _looks_like_meta_text(text):
         return None
-    return {"text": text, "answer": answer, "criteria": criteria[:4], "uniqueness_reason": _clean_text(data.get("uniqueness_reason"))}
+    return {"text": text, "answer": answer, "criteria": criteria[:4]}
 
 
 def _type_contract(assessment_type: str, item_type: str) -> str:
     if item_type in {"coursework_topic", "project_topic"}:
         return TYPE_CONTRACTS.get("course_project") if item_type == "project_topic" else TYPE_CONTRACTS.get("coursework")
     return TYPE_CONTRACTS.get(assessment_type, TYPE_CONTRACTS["practice"])
+
+
+def _repair_text_for_target_type(text: str, item: AssessmentItemRead) -> str:
+    text = _clean_text(text)
+    lower = text.lower()
+    if item.assessment_type in {"oral", "exam_questions", "credit"} and not lower.startswith("вопрос"):
+        return f"Вопрос: {text[:1].lower()}{text[1:]}" if text else text
+    if item.assessment_type == "control_work" and not lower.startswith("контрольное задание"):
+        return f"Контрольное задание: {text}"
+    if item.assessment_type in {"practice", "exam_practice"} and not lower.startswith("практическое задание"):
+        return f"Практическое задание: {text}"
+    if item.assessment_type == "laboratory" and not lower.startswith("лабораторное задание"):
+        return f"Лабораторное задание: {text}"
+    if item.assessment_type == "coursework" and not lower.startswith("тема курсовой работы"):
+        return f"Тема курсовой работы: {text}"
+    if item.assessment_type == "course_project" and not lower.startswith("тема курсового проекта"):
+        return f"Тема курсового проекта: {text}"
+    return text
 
 
 def _matches_type_contract(text: str, assessment_type: str, item_type: str) -> bool:

@@ -19,11 +19,15 @@ backend/app/storage/reference_library/*
 !backend/app/storage/reference_library/.gitkeep
 backend/storage/models/*
 !backend/storage/models/.gitkeep
+models/*
+!models/.gitkeep
 *.gguf
 *.safetensors
 *.bin
 *.pt
 *.pth
+*.onnx
+*.ggml
 
 # Environment
 .env

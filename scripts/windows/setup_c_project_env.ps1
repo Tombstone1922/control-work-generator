@@ -42,6 +42,12 @@ $settings = @{
     "LOCAL_LLM_BATCH_SIZE" = "4"
     "LOCAL_LLM_FORCE_REWRITE" = "false"
     "LOCAL_LLM_SKIP_TYPES" = "oral,exam_questions,credit,test_bank,diagnostic"
+    "LOCAL_LLM_QWEN35_ENABLED" = "true"
+    "LOCAL_LLM_QWEN35_BASE_URL" = "http://127.0.0.1:8082/v1"
+    "LOCAL_LLM_QWEN35_MODEL" = "qwen35-9b-gemini-reasoning-distill-q4_k_m"
+    "LOCAL_LLM_QWEN35_TIMEOUT_SECONDS" = "120"
+    "LOCAL_LLM_QWEN35_TEMPERATURE" = "0.2"
+    "LOCAL_LLM_QWEN35_MAX_TOKENS" = "1800"
 }
 
 foreach ($key in $settings.Keys) {
@@ -56,7 +62,8 @@ foreach ($key in $settings.Keys) {
 
 Set-Content -Path $EnvPath -Value $envContent -Encoding UTF8
 
-Write-Host "Configured backend .env for fast Qwen refinement: $ProjectRoot" -ForegroundColor Green
-Write-Host "Qwen will refine up to 10 high-impact tasks and skip oral/test/diagnostic items for speed." -ForegroundColor Yellow
-Write-Host "Put Qwen model here:" -ForegroundColor Cyan
-Write-Host "  $ModelsDir\Qwen3-14B-Q4_K_M.gguf" -ForegroundColor Cyan
+Write-Host "Configured backend .env for local LLM refinement: $ProjectRoot" -ForegroundColor Green
+Write-Host "Default model: Qwen3 14B on http://127.0.0.1:8081/v1" -ForegroundColor Yellow
+Write-Host "Experimental model: Qwen3.5 9B on http://127.0.0.1:8082/v1" -ForegroundColor Yellow
+Write-Host "Put GGUF models here:" -ForegroundColor Cyan
+Write-Host "  $ModelsDir" -ForegroundColor Cyan

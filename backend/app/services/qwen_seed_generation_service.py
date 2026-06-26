@@ -16,7 +16,11 @@ from app.schemas import (
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
 from app.services.assessment_item_postprocessor import postprocess_generated_items
 from app.services.fast_local_llm_task_refiner import refine_items_with_local_llm
+from app.services.local_llm_client import QWEN35_PROFILE
 from app.services.role_policy import ensure_can_edit_fund_content
+
+QWEN35_GENERATION_MODE = "qwen35_seed_good"
+QWEN3_GENERATION_MODE = "qwen_seed_good"
 
 
 def generate_qwen_seed_bank(
@@ -27,6 +31,13 @@ def generate_qwen_seed_bank(
     current_user: models.User,
 ) -> AssessmentItemsGenerateResponse | None:
     total_started = time.perf_counter()
+    requested_mode = (payload.generation_mode or QWEN3_GENERATION_MODE).strip().lower()
+    use_qwen35 = requested_mode == QWEN35_GENERATION_MODE
+    llm_profile = QWEN35_PROFILE if use_qwen35 else None
+    mode_label = "Qwen3.5-9B" if use_qwen35 else "Qwen"
+    source_kind = "qwen35_seed_good" if use_qwen35 else "qwen_seed_good"
+    model_version = "qwen35-9b-seed-good-v0.1" if use_qwen35 else "qwen-seed-good-v0.1"
+
     profiling: dict = {
         "stages_ms": {},
         "sections_total": 0,
@@ -34,6 +45,7 @@ def generate_qwen_seed_bank(
         "items_before_llm": 0,
         "items_after_llm": 0,
         "items_persisted": 0,
+        "llm_profile": QWEN35_PROFILE if use_qwen35 else "default",
     }
 
     stage_started = time.perf_counter()
@@ -81,7 +93,7 @@ def generate_qwen_seed_bank(
     profiling["stages_ms"]["pre_postprocess"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
-    qwen_items, qwen_warnings, llm_profile = refine_items_with_local_llm(
+    qwen_items, qwen_warnings, llm_profile_data = refine_items_with_local_llm(
         items=preclean_items,
         discipline_name=fund.discipline_name,
         all_topics=topics,
@@ -89,8 +101,9 @@ def generate_qwen_seed_bank(
         skip_types_override=set(),
         force_rewrite_override=True,
         max_items_override=len(preclean_items),
+        llm_profile_override=llm_profile,
     )
-    profiling["local_llm"] = llm_profile
+    profiling["local_llm"] = llm_profile_data
     profiling["stages_ms"]["local_llm_refinement"] = _elapsed_ms(stage_started)
     profiling["items_after_llm"] = len(qwen_items)
 
@@ -98,9 +111,9 @@ def generate_qwen_seed_bank(
     cleaned_items, cleanup_warnings = postprocess_generated_items(qwen_items, discipline_name=fund.discipline_name, all_topics=topics)
     qwen_good_items = [
         item.model_copy(update={
-            "source_kind": "qwen_seed_good" if item.source_kind == "local_llm_qwen3" else item.source_kind,
+            "source_kind": source_kind if item.source_kind in {"local_llm_qwen3", "local_llm_qwen35"} else item.source_kind,
             "status": "approved",
-            "source_context": f"Qwen-only seed generation; auto-good training example. {item.source_context}",
+            "source_context": f"{mode_label} seed generation; auto-good training example. {item.source_context}",
         })
         for item in cleaned_items
     ]
@@ -114,30 +127,38 @@ def generate_qwen_seed_bank(
 
     stage_started = time.perf_counter()
     seed_items = [item for item in persisted if item.id in generated_ids]
-    examples_count = _create_auto_good_examples(db=db, fund=fund, user=current_user, items=seed_items)
+    examples_count = _create_auto_good_examples(db=db, fund=fund, user=current_user, items=seed_items, source=source_kind, mode_label=mode_label)
     profiling["stages_ms"]["save_good_training_examples"] = _elapsed_ms(stage_started)
     profiling["auto_good_examples"] = examples_count
     profiling["total_ms"] = _elapsed_ms(total_started)
 
     warnings = [
-        "Qwen-only режим: задания сформированы через контекстный каркас и улучшены локальной Qwen-моделью.",
+        f"{mode_label} режим: задания сформированы через контекстный каркас и улучшены локальной моделью.",
         f"Автоматически добавлено хороших обучающих примеров: {examples_count}.",
     ] + preclean_warnings + qwen_warnings + cleanup_warnings
 
     return AssessmentItemsGenerateResponse(
         items=persisted,
-        requested_mode="qwen_seed_good",
-        used_mode="qwen_seed_good",
+        requested_mode=requested_mode,
+        used_mode=source_kind,
         learned_generated_items=examples_count,
         narrow_llm_generated_items=0,
         template_generated_items=max(0, len(seed_items) - examples_count),
-        model_version="qwen-seed-good-v0.1",
+        model_version=model_version,
         warnings=warnings,
         profiling=profiling,
     )
 
 
-def _create_auto_good_examples(*, db: Session, fund: models.AssessmentFund, user: models.User, items: list[AssessmentItemRead]) -> int:
+def _create_auto_good_examples(
+    *,
+    db: Session,
+    fund: models.AssessmentFund,
+    user: models.User,
+    items: list[AssessmentItemRead],
+    source: str,
+    mode_label: str,
+) -> int:
     created = 0
     for item in items:
         if item.fund_id != fund.id:
@@ -158,8 +179,8 @@ def _create_auto_good_examples(*, db: Session, fund: models.AssessmentFund, user
             answer=item.answer,
             criteria_json=json.dumps(item.criteria, ensure_ascii=False),
             quality_label="good",
-            teacher_comment="Автоматически подтверждено режимом Qwen-only для наполнения обучающей выборки.",
-            source="qwen_seed_good",
+            teacher_comment=f"Автоматически подтверждено режимом {mode_label} для наполнения обучающей выборки.",
+            source=source,
         )
         db.add(entity)
         created += 1

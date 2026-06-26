@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from app.schemas import AssessmentItemRead
 from app.services.assessment_item_smart_builder import normalize_topic
 from app.services.discipline_knowledge_base import get_topic_knowledge_context
-from app.services.local_llm_client import QWEN35_PROFILE, LocalLLMClient, get_local_llm_settings
+from app.services.local_llm_client import QWEN35_PROFILE, QWEN8_PROFILE, LocalLLMClient, get_local_llm_settings
 
 SYSTEM_PROMPT = """
 Ты методист вуза. Улучши оценочные задания по ФОС.
@@ -208,7 +208,7 @@ def _refine_items_batched(
                 used_texts.append(item.text)
                 profile.skipped_similar += 1
                 continue
-            source_kind = "local_llm_qwen35" if settings.profile == QWEN35_PROFILE else "local_llm_qwen3"
+            source_kind = _source_kind_for_profile(settings.profile)
             updated = item.model_copy(update={
                 "text": text,
                 "answer": candidate.get("answer") or item.answer,
@@ -223,7 +223,7 @@ def _refine_items_batched(
     refined.extend(tail_items)
     profile.total_ms = int((time.perf_counter() - started) * 1000)
     profile.avg_call_ms = int(profile.llm_ms / profile.calls) if profile.calls else 0
-    model_label = "Qwen3.5-9B" if settings.profile == QWEN35_PROFILE else "локальная LLM"
+    model_label = _label_for_profile(settings.profile)
     if profile.refined_items:
         warnings.append(f"{model_label} улучшила задания: {profile.refined_items}; режим: {profile.mode}; запросов: {profile.calls}; модель: {settings.model}.")
     if profile.skipped_by_type:
@@ -336,6 +336,22 @@ def _matches_type_contract(text: str, assessment_type: str, item_type: str) -> b
     if assessment_type == "control_work":
         return lower.startswith("контрольное задание") or "контрольн" in lower[:140]
     return True
+
+
+def _source_kind_for_profile(profile: str) -> str:
+    if profile == QWEN35_PROFILE:
+        return "local_llm_qwen35"
+    if profile == QWEN8_PROFILE:
+        return "local_llm_qwen8"
+    return "local_llm_qwen3"
+
+
+def _label_for_profile(profile: str) -> str:
+    if profile == QWEN35_PROFILE:
+        return "Qwen3.5-9B"
+    if profile == QWEN8_PROFILE:
+        return "Qwen3-8B"
+    return "Qwen3 14B"
 
 
 def _should_use_batch(items: list[AssessmentItemRead], max_items: int, skip_types_override: set[str] | None = None) -> bool:

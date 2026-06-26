@@ -16,10 +16,12 @@ class LocalLLMDiagnosticsResult:
     json_ok: bool
     sample_text: str
     error: str
+    profile: str = "default"
 
     def as_dict(self) -> dict:
         return {
             "enabled": self.enabled,
+            "profile": self.profile,
             "base_url": self.base_url,
             "model": self.model,
             "available": self.available,
@@ -30,18 +32,19 @@ class LocalLLMDiagnosticsResult:
         }
 
 
-def check_local_llm() -> LocalLLMDiagnosticsResult:
-    settings = get_local_llm_settings()
+def check_local_llm(profile: str | None = None) -> LocalLLMDiagnosticsResult:
+    settings = get_local_llm_settings(profile)
     if not settings.enabled:
         return LocalLLMDiagnosticsResult(
             enabled=False,
+            profile=settings.profile,
             base_url=settings.base_url,
             model=settings.model,
             available=False,
             latency_ms=None,
             json_ok=False,
             sample_text="",
-            error="LOCAL_LLM_ENABLED=false",
+            error=f"LOCAL_LLM_ENABLED=false для профиля {settings.profile}",
         )
 
     client = LocalLLMClient(settings)
@@ -54,6 +57,7 @@ def check_local_llm() -> LocalLLMDiagnosticsResult:
     if not data:
         return LocalLLMDiagnosticsResult(
             enabled=True,
+            profile=settings.profile,
             base_url=settings.base_url,
             model=settings.model,
             available=False,
@@ -65,6 +69,7 @@ def check_local_llm() -> LocalLLMDiagnosticsResult:
 
     return LocalLLMDiagnosticsResult(
         enabled=True,
+        profile=settings.profile,
         base_url=settings.base_url,
         model=settings.model,
         available=True,
@@ -75,13 +80,14 @@ def check_local_llm() -> LocalLLMDiagnosticsResult:
     )
 
 
-def generate_local_llm_sample_task() -> dict:
-    settings = get_local_llm_settings()
+def generate_local_llm_sample_task(profile: str | None = None) -> dict:
+    settings = get_local_llm_settings(profile)
     if not settings.enabled:
         return {
             "enabled": False,
+            "profile": settings.profile,
             "ok": False,
-            "error": "LOCAL_LLM_ENABLED=false",
+            "error": f"LOCAL_LLM_ENABLED=false для профиля {settings.profile}",
         }
 
     client = LocalLLMClient(settings)
@@ -101,12 +107,14 @@ def generate_local_llm_sample_task() -> dict:
     if not data:
         return {
             "enabled": True,
+            "profile": settings.profile,
             "ok": False,
             "raw_content": client.last_raw_content[:1000],
             "error": "Модель ответила, но JSON не удалось распознать.",
         }
     return {
         "enabled": True,
+        "profile": settings.profile,
         "ok": True,
         "model": settings.model,
         "result": data,

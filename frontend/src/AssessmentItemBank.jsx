@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+const QWEN_SEED_MODES = new Set(['qwen_seed_good', 'qwen35_seed_good']);
+
 function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
   const [validation, setValidation] = useState(null);
@@ -114,7 +116,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setError('');
     setSuccess('');
     try {
-      const endpoint = generationMode === 'qwen_seed_good'
+      const endpoint = QWEN_SEED_MODES.has(generationMode)
         ? `/api/qwen-training/${fund.fund_id}/generate-good`
         : `/api/assessment-items/${fund.fund_id}/generate`;
       const response = await api.post(endpoint, {
@@ -285,7 +287,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
       <div className="itemBankToolbar simplifiedGenerationToolbar">
         <label>Раздел ФОС<select value={selectedSectionCode} onChange={(event) => setSelectedSectionCode(event.target.value)}><option value="">Все активные разделы</option>{enabledSections.map((section) => <option key={section.code} value={section.code}>{section.title}</option>)}</select></label>
         {canEdit && <label className="toggleLabel itemBankCheckbox"><input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} />Заменить старые задания</label>}
-        {canEdit && <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : generationMode === 'qwen_seed_good' ? 'Сформировать и обучить' : 'Сформировать задания'}</button>}
+        {canEdit && <button className="primary" type="button" onClick={generateItems} disabled={isGenerating || !enabledSections.length}>{isGenerating ? 'Формируем...' : QWEN_SEED_MODES.has(generationMode) ? 'Сформировать и обучить' : 'Сформировать задания'}</button>}
       </div>
 
       <div className="itemBankStats"><span>Всего заданий: <strong>{items.length}</strong></span><span>В выбранном разделе: <strong>{visibleItems.length}</strong></span></div>
@@ -348,7 +350,8 @@ function CompactList({ title, values }) {
 function LearningModePanel({ generationMode, setGenerationMode, stats }) {
   const hasGoodExamples = (stats?.good_examples || 0) > 0;
   const isQwenSeed = generationMode === 'qwen_seed_good';
-  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="qwen_seed_good">Qwen-only: сгенерировать и пометить как хорошие</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{isQwenSeed && <div className="notice">Этот режим нужен для разового наполнения обучающей выборки: Qwen формирует задания, банк обновляется, а все результаты автоматически сохраняются как хорошие примеры.</div>}{!hasGoodExamples && generationMode !== 'template' && !isQwenSeed && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
+  const isQwen35Seed = generationMode === 'qwen35_seed_good';
+  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="qwen_seed_good">Qwen3 14B: сгенерировать и пометить как хорошие</option><option value="qwen35_seed_good">Qwen3.5 9B: быстрый эксперимент</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{isQwenSeed && <div className="notice">Этот режим нужен для разового наполнения обучающей выборки: Qwen3 14B формирует задания, банк обновляется, а все результаты автоматически сохраняются как хорошие примеры.</div>}{isQwen35Seed && <div className="notice">Экспериментальный быстрый режим: используется локальный сервер Qwen3.5-9B на отдельном порту. Результаты также автоматически попадают в хорошие примеры.</div>}{!hasGoodExamples && generationMode !== 'template' && !QWEN_SEED_MODES.has(generationMode) && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
 }
 
 function GenerationSummary({ generation }) {
@@ -359,7 +362,8 @@ function GenerationProfiling({ profiling }) {
   if (!profiling || !profiling.total_ms) return null;
   const llm = profiling.local_llm || {};
   const stages = profiling.stages_ms || {};
-  return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>Qwen: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span>{stages.save_good_training_examples !== undefined && <span>Сохранение good: <strong>{formatMs(stages.save_good_training_examples)}</strong></span>}</div><div className="itemBankStats"><span>Qwen режим: <strong>{llm.mode || '—'}</strong></span><span>Запросов Qwen: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено Qwen: <strong>{llm.refined_items || 0}</strong></span><span>Пропущено по типу: <strong>{llm.skipped_by_type || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов Qwen: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
+  const llmLabel = llm.profile === 'qwen35_9b' ? 'Qwen3.5-9B' : 'Qwen3 14B';
+  return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>{llmLabel}: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span>{stages.save_good_training_examples !== undefined && <span>Сохранение good: <strong>{formatMs(stages.save_good_training_examples)}</strong></span>}</div><div className="itemBankStats"><span>LLM профиль: <strong>{llm.profile || 'default'}</strong></span><span>Модель: <strong>{llm.model || '—'}</strong></span><span>Запросов: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено: <strong>{llm.refined_items || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов {llmLabel}: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
 }
 
 function ValidationDashboard({ validation, sectionMap }) {
@@ -378,7 +382,8 @@ function downloadBlob(data, filename) {
 }
 
 function successMessage(usedMode) {
-  if (usedMode === 'qwen_seed_good') return 'Qwen-only генерация завершена: задания добавлены в банк и сохранены как хорошие примеры.';
+  if (usedMode === 'qwen35_seed_good') return 'Qwen3.5-9B генерация завершена: задания добавлены в банк и сохранены как хорошие примеры.';
+  if (usedMode === 'qwen_seed_good') return 'Qwen3 14B генерация завершена: задания добавлены в банк и сохранены как хорошие примеры.';
   if (usedMode === 'narrow_llm') return 'Банк заданий сформирован интеллектуальным генератором ФОС.';
   if (usedMode === 'learned') return 'Банк заданий сформирован на основе обучающей выборки.';
   if (usedMode === 'hybrid') return 'Банк заданий сформирован гибридно: интеллектуальный генератор + контекстный модуль.';
@@ -392,7 +397,8 @@ function generationModeLabel(value) {
     hybrid: 'Интеллектуальный генератор + резерв',
     learned: 'По экспертным примерам',
     template: 'Базовый шаблонный режим',
-    qwen_seed_good: 'Qwen-only обучающая генерация',
+    qwen_seed_good: 'Qwen3 14B обучающая генерация',
+    qwen35_seed_good: 'Qwen3.5 9B обучающая генерация',
   }[value] || value || '—');
 }
 
@@ -409,8 +415,10 @@ function sourceKindLabel(value) {
     smart_template: 'умный шаблон',
     smart_builder: 'smart-builder',
     knowledge_context: 'context-module',
-    local_llm_qwen3: 'Qwen-refiner',
-    qwen_seed_good: 'Qwen-good',
+    local_llm_qwen3: 'Qwen3-refiner',
+    local_llm_qwen35: 'Qwen3.5-refiner',
+    qwen_seed_good: 'Qwen3-good',
+    qwen35_seed_good: 'Qwen3.5-good',
     learned_example: 'по экспертному примеру',
     om_reference: 'OM/ФОС',
     narrow_llm: 'интеллектуальный ФОС',
@@ -421,7 +429,9 @@ function sourceKindLabel(value) {
 function sourceKindClass(value) {
   return ({
     local_llm_qwen3: 'sourceQwen',
+    local_llm_qwen35: 'sourceQwen',
     qwen_seed_good: 'sourceQwen',
+    qwen35_seed_good: 'sourceQwen',
     knowledge_context: 'sourceKnowledge',
     smart_builder: 'sourceSmart',
     smart_template: 'sourceSmart',

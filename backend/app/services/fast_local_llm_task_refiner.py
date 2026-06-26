@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from app.schemas import AssessmentItemRead
 from app.services.assessment_item_smart_builder import normalize_topic
 from app.services.discipline_knowledge_base import get_topic_knowledge_context
-from app.services.local_llm_client import LocalLLMClient, get_local_llm_settings
+from app.services.local_llm_client import QWEN35_PROFILE, LocalLLMClient, get_local_llm_settings
 
 SYSTEM_PROMPT = """
 Ты методист вуза. Улучши оценочные задания по ФОС.
@@ -41,6 +41,8 @@ class LocalLLMRefinementProfile:
     enabled: bool = False
     mode: str = "disabled"
     model: str = ""
+    profile: str = "default"
+    base_url: str = ""
     max_items: int = 0
     batch_size: int = 0
     requested_items: int = 0
@@ -60,6 +62,8 @@ class LocalLLMRefinementProfile:
             "enabled": self.enabled,
             "mode": self.mode,
             "model": self.model,
+            "profile": self.profile,
+            "base_url": self.base_url,
             "max_items": self.max_items,
             "batch_size": self.batch_size,
             "requested_items": self.requested_items,
@@ -86,15 +90,29 @@ def refine_items_with_local_llm(
     force_rewrite_override: bool | None = None,
     max_items_override: int | None = None,
     batch_size_override: int | None = None,
+    llm_profile_override: str | None = None,
 ) -> tuple[list[AssessmentItemRead], list[str], dict]:
-    settings = get_local_llm_settings()
+    settings = get_local_llm_settings(llm_profile_override)
     if not settings.enabled:
-        profile = LocalLLMRefinementProfile(enabled=False, requested_items=len(items)).as_dict()
+        profile = LocalLLMRefinementProfile(
+            enabled=False,
+            model=settings.model,
+            profile=settings.profile,
+            base_url=settings.base_url,
+            requested_items=len(items),
+        ).as_dict()
         return items, [], profile
 
     mode = (mode_override or os.getenv("LOCAL_LLM_REFINEMENT_MODE", "auto")).strip().lower()
     if mode in {"off", "disabled", "false", "0", "none"}:
-        profile = LocalLLMRefinementProfile(enabled=False, mode="disabled_by_mode", model=settings.model, requested_items=len(items)).as_dict()
+        profile = LocalLLMRefinementProfile(
+            enabled=False,
+            mode="disabled_by_mode",
+            model=settings.model,
+            profile=settings.profile,
+            base_url=settings.base_url,
+            requested_items=len(items),
+        ).as_dict()
         return items, ["Локальная LLM-прокачка отключена режимом LOCAL_LLM_REFINEMENT_MODE."], profile
 
     max_items = max_items_override if max_items_override is not None else _env_int("LOCAL_LLM_MAX_ITEMS", 10, minimum=1, maximum=max(len(items), 1))
@@ -114,6 +132,7 @@ def refine_items_with_local_llm(
         max_items=max_items,
         skip_types_override=skip_types_override,
         force_rewrite_override=force_rewrite_override,
+        llm_profile_override=llm_profile_override,
     )
 
 
@@ -126,8 +145,9 @@ def _refine_items_batched(
     max_items: int,
     skip_types_override: set[str] | None = None,
     force_rewrite_override: bool | None = None,
+    llm_profile_override: str | None = None,
 ) -> tuple[list[AssessmentItemRead], list[str], dict]:
-    settings = get_local_llm_settings()
+    settings = get_local_llm_settings(llm_profile_override)
     client = LocalLLMClient(settings)
     skip_types = skip_types_override if skip_types_override is not None else _env_set("LOCAL_LLM_SKIP_TYPES", DEFAULT_SKIP_TYPES)
     force_rewrite = force_rewrite_override if force_rewrite_override is not None else _env_bool("LOCAL_LLM_FORCE_REWRITE", True)
@@ -136,6 +156,8 @@ def _refine_items_batched(
         enabled=True,
         mode="batch-fast" if batch_size > 1 else "single-fast",
         model=settings.model,
+        profile=settings.profile,
+        base_url=settings.base_url,
         max_items=max_items,
         batch_size=batch_size,
         requested_items=len(items),
@@ -186,12 +208,13 @@ def _refine_items_batched(
                 used_texts.append(item.text)
                 profile.skipped_similar += 1
                 continue
+            source_kind = "local_llm_qwen35" if settings.profile == QWEN35_PROFILE else "local_llm_qwen3"
             updated = item.model_copy(update={
                 "text": text,
                 "answer": candidate.get("answer") or item.answer,
                 "criteria": candidate.get("criteria") or item.criteria,
-                "source_kind": "local_llm_qwen3",
-                "source_context": f"Local LLM {profile.mode}; model={settings.model}; batch_size={batch_size}; topic=«{normalize_topic(item.topic)}».",
+                "source_kind": source_kind,
+                "source_context": f"Local LLM {profile.mode}; profile={settings.profile}; model={settings.model}; batch_size={batch_size}; topic=«{normalize_topic(item.topic)}».",
             })
             refined.append(updated)
             used_texts.append(text)
@@ -200,8 +223,9 @@ def _refine_items_batched(
     refined.extend(tail_items)
     profile.total_ms = int((time.perf_counter() - started) * 1000)
     profile.avg_call_ms = int(profile.llm_ms / profile.calls) if profile.calls else 0
+    model_label = "Qwen3.5-9B" if settings.profile == QWEN35_PROFILE else "локальная LLM"
     if profile.refined_items:
-        warnings.append(f"Локальная LLM улучшила задания: {profile.refined_items}; режим: {profile.mode}; запросов: {profile.calls}; модель: {settings.model}.")
+        warnings.append(f"{model_label} улучшила задания: {profile.refined_items}; режим: {profile.mode}; запросов: {profile.calls}; модель: {settings.model}.")
     if profile.skipped_by_type:
         warnings.append(f"Локальная LLM пропустила быстрые типы заданий: {profile.skipped_by_type}.")
     if profile.failed_items:

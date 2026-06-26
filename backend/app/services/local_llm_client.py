@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BACKEND_DIR / ".env")
 
+QWEN35_PROFILE = "qwen35_9b"
+QWEN35_MODEL_NAME = "qwen35-9b-gemini-reasoning-distill-q4_k_m"
+
 
 @dataclass
 class LocalLLMSettings:
@@ -24,16 +27,32 @@ class LocalLLMSettings:
     timeout_seconds: int
     temperature: float
     max_tokens: int
+    profile: str = "default"
 
 
-def get_local_llm_settings() -> LocalLLMSettings:
+def get_local_llm_settings(profile: str | None = None) -> LocalLLMSettings:
+    profile_key = _normalize_profile(profile)
+    default_enabled = _env_bool("LOCAL_LLM_ENABLED", False)
+
+    if profile_key == QWEN35_PROFILE:
+        return LocalLLMSettings(
+            enabled=_env_bool("LOCAL_LLM_QWEN35_ENABLED", default_enabled),
+            base_url=os.getenv("LOCAL_LLM_QWEN35_BASE_URL", "http://127.0.0.1:8082/v1").rstrip("/"),
+            model=os.getenv("LOCAL_LLM_QWEN35_MODEL", QWEN35_MODEL_NAME),
+            timeout_seconds=int(os.getenv("LOCAL_LLM_QWEN35_TIMEOUT_SECONDS", os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "120"))),
+            temperature=float(os.getenv("LOCAL_LLM_QWEN35_TEMPERATURE", os.getenv("LOCAL_LLM_TEMPERATURE", "0.2"))),
+            max_tokens=int(os.getenv("LOCAL_LLM_QWEN35_MAX_TOKENS", os.getenv("LOCAL_LLM_MAX_TOKENS", "1800"))),
+            profile=QWEN35_PROFILE,
+        )
+
     return LocalLLMSettings(
-        enabled=_env_bool("LOCAL_LLM_ENABLED", False),
+        enabled=default_enabled,
         base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1").rstrip("/"),
         model=os.getenv("LOCAL_LLM_MODEL", "qwen3-14b-instruct-q4_k_m"),
         timeout_seconds=int(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "90")),
         temperature=float(os.getenv("LOCAL_LLM_TEMPERATURE", "0.2")),
         max_tokens=int(os.getenv("LOCAL_LLM_MAX_TOKENS", "900")),
+        profile="default",
     )
 
 
@@ -87,6 +106,13 @@ class LocalLLMClient:
                 return response.read().decode("utf-8")
         except (urllib.error.URLError, TimeoutError, OSError):
             return None
+
+
+def _normalize_profile(profile: str | None) -> str:
+    value = (profile or "default").strip().lower().replace("-", "_")
+    if value in {"qwen35", "qwen3_5", "qwen3.5", "qwen35_9b", "experimental", "qwen35_experimental"}:
+        return QWEN35_PROFILE
+    return "default"
 
 
 def _no_think(prompt: str) -> str:

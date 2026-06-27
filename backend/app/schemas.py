@@ -236,6 +236,8 @@ class Question(BaseModel):
     text: str
     type: str
     difficulty: str
+    answer: str = ""
+    criteria: List[str] = Field(default_factory=list)
 
 
 class ControlWorkVariant(BaseModel):

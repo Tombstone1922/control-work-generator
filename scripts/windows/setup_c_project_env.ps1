@@ -42,6 +42,12 @@ $settings = @{
     "LOCAL_LLM_BATCH_SIZE" = "4"
     "LOCAL_LLM_FORCE_REWRITE" = "false"
     "LOCAL_LLM_SKIP_TYPES" = "oral,exam_questions,credit,test_bank,diagnostic"
+    "LOCAL_LLM_QWEN_SMALL_ENABLED" = "true"
+    "LOCAL_LLM_QWEN_SMALL_BASE_URL" = "http://127.0.0.1:8084/v1"
+    "LOCAL_LLM_QWEN_SMALL_MODEL" = "qwen-small-q4_k_m"
+    "LOCAL_LLM_QWEN_SMALL_TIMEOUT_SECONDS" = "90"
+    "LOCAL_LLM_QWEN_SMALL_TEMPERATURE" = "0.1"
+    "LOCAL_LLM_QWEN_SMALL_MAX_TOKENS" = "700"
     "LOCAL_LLM_QWEN8_ENABLED" = "true"
     "LOCAL_LLM_QWEN8_BASE_URL" = "http://127.0.0.1:8083/v1"
     "LOCAL_LLM_QWEN8_MODEL" = "qwen3-8b-q4_k_m"
@@ -70,6 +76,7 @@ Set-Content -Path $EnvPath -Value $envContent -Encoding UTF8
 
 Write-Host "Configured backend .env for local LLM refinement: $ProjectRoot" -ForegroundColor Green
 Write-Host "Default model: Qwen3 14B on http://127.0.0.1:8081/v1" -ForegroundColor Yellow
+Write-Host "Small fast candidate: Qwen Small 3/4B on http://127.0.0.1:8084/v1" -ForegroundColor Yellow
 Write-Host "Fast candidate: Qwen3 8B on http://127.0.0.1:8083/v1" -ForegroundColor Yellow
 Write-Host "Experimental model: Qwen3.5 9B on http://127.0.0.1:8082/v1" -ForegroundColor Yellow
 Write-Host "Put GGUF models here:" -ForegroundColor Cyan

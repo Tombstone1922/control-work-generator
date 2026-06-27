@@ -29,6 +29,7 @@ from app.services.assessment_item_generator import ItemGenerationContext, genera
 from app.services.assessment_item_postprocessor import postprocess_generated_items
 from app.services.assessment_item_validator import validate_assessment_items
 from app.services.example_based_generator import apply_example_based_generation
+from app.services.intelligent_v2_generation_service import INTELLIGENT_V2_MODE, generate_intelligent_v2_bank
 from app.services.local_llm_task_refiner import refine_items_with_local_llm
 from app.services.narrow_llm_service import apply_narrow_llm_generation
 from app.services.reference_library import find_om_examples_for_program, get_reference_library_path
@@ -57,6 +58,15 @@ def generate_items(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemsGenerateResponse:
+    if payload.generation_mode.strip().lower() == INTELLIGENT_V2_MODE:
+        try:
+            response = generate_intelligent_v2_bank(db=db, fund_id=fund_id, payload=payload, current_user=current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if response is None:
+            raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+        return response
+
     total_started = time.perf_counter()
     profiling: dict = {
         "stages_ms": {},
@@ -238,7 +248,16 @@ def validate_items(
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
 
     topics = json.loads(fund.program.topics_json or "[]")
-    competencies = [item.code for item in fund.competencies]
+    competencies = [
+        AssessmentCompetencyRead(
+            id=item.id,
+            code=item.code,
+            description=item.description,
+            indicators=json.loads(item.indicators_json or "[]"),
+            levels=json.loads(item.levels_json or "[]"),
+        )
+        for item in fund.competencies
+    ]
     return validate_assessment_items(items, topics, competencies)
 
 
@@ -250,29 +269,23 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemRead:
-    fund = get_fund_entity_for_user(db, fund_id, current_user)
-    if fund is None:
-        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
-    ensure_can_edit_fund_content(current_user, fund)
-    updated = update_item_for_user(db, fund_id, item_id, current_user, payload)
-    if updated is None:
+    try:
+        item = update_item_for_user(db, fund_id, item_id, current_user, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if item is None:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
-    return updated
+    return item
 
 
-@router.delete("/{fund_id}/{item_id}", status_code=204, response_class=Response)
+@router.delete("/{fund_id}/{item_id}", status_code=204)
 def delete_item(
     fund_id: str,
     item_id: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> Response:
-    fund = get_fund_entity_for_user(db, fund_id, current_user)
-    if fund is None:
-        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
-    ensure_can_edit_fund_content(current_user, fund)
-    deleted = delete_item_for_user(db, fund_id, item_id, current_user)
-    if not deleted:
+    if not delete_item_for_user(db, fund_id, item_id, current_user):
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
     return Response(status_code=204)
 

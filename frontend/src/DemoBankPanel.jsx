@@ -19,7 +19,8 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       const response = await api.post(`/api/demo-bank/${program.program_id}/seed`);
       setSummary(response.data);
       const qwen = response.data.llm?.used ? ` Qwen улучшил ${response.data.llm.refined} заданий за ${response.data.llm.seconds} с.` : ' Qwen не использовался: проверьте запуск локальной модели, если нужны улучшенные формулировки.';
-      setSuccess(`Банк заданий подготовлен: ${response.data.total_items} заданий.${qwen}`);
+      const persistent = response.data.persistent ? ' Банк сохранен на постоянку в локальный JSON-файл.' : '';
+      setSuccess(`Банк заданий подготовлен: ${response.data.total_items} заданий.${qwen}${persistent}`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось подготовить банк заданий.');
     } finally {
@@ -36,7 +37,11 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       const response = await api.get(`/api/demo-bank/${program.program_id}/work-mode`);
       setSummary(response.data);
       if (response.data.ready) {
-        const matchText = response.data.built_now ? '' : ' Если банк был подготовлен для РПД с таким же именем, он автоматически подставлен по названию файла.';
+        const matchText = response.data.restored_from_file
+          ? ' Банк восстановлен из постоянного JSON-файла по названию РПД.'
+          : response.data.matched_by_name
+            ? ' Банк был найден по совпадению названия РПД.'
+            : '';
         setSuccess(`Рабочий режим открыт: задания взяты из подготовленного банка без генерации.${matchText}`);
       } else {
         setError('Для этой РПД банк еще не набит и совпадение по названию не найдено. Сначала нажмите “Набить банк заданий”.');
@@ -52,7 +57,7 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
     <section className="card quickGenerationCard">
       <p className="eyebrow">Демонстрационный режим защиты</p>
       <h2>Qwen-банк заданий по РПД</h2>
-      <p className="muted">Логика такая: заранее набиваем качественный банк через Qwen, а на защите загружаем РПД с тем же названием и в рабочем режиме мгновенно подставляем готовые задания по совпадению имени файла.</p>
+      <p className="muted">Логика такая: заранее набиваем качественный банк через Qwen, сохраняем его на постоянку, а на защите загружаем РПД с тем же названием и в рабочем режиме мгновенно подставляем готовые задания.</p>
 
       <div className="authTabs demoModeTabs">
         <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
@@ -66,13 +71,13 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       {mode === 'seed' ? (
         <div className="demoModeBlock">
           <h3>Набор заданий</h3>
-          <p className="muted">Этот режим запускается заранее. Он создает базу по темам и компетенциям РПД, а Qwen улучшает формулировки: устные вопросы, практику и тестовые задания с вариантами ответов.</p>
+          <p className="muted">Этот режим запускается заранее. Он создает базу по темам и компетенциям РПД, Qwen улучшает формулировки, а итоговый банк сохраняется и в базу, и в постоянный JSON-файл.</p>
           <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Qwen набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
         </div>
       ) : (
         <div className="demoModeBlock">
           <h3>Рабочий режим</h3>
-          <p className="muted">Можно просто загрузить РПД заново. Если имя совпадает, например RP_09.03.02_5990_2925_2025, система найдет ранее подготовленный банк и покажет задания без генерации.</p>
+          <p className="muted">Можно просто загрузить РПД заново. Если имя совпадает, например RP_09.03.02_5990_2925_2025, система найдет постоянный банк и покажет задания без генерации.</p>
           <button className="primary" type="button" onClick={openWorkMode} disabled={isOpening || !program}>{isOpening ? 'Ищем банк по названию...' : 'Показать готовые задания'}</button>
         </div>
       )}
@@ -93,7 +98,11 @@ function PreparedBankSummary({ summary }) {
         <span>Файл: <strong>{summary.filename}</strong></span>
         {summary.llm && <span>Qwen: <strong>{summary.llm.used ? `${summary.llm.refined} улучшено` : 'не использован'}</strong></span>}
         {summary.llm?.seconds > 0 && <span>Время Qwen: <strong>{summary.llm.seconds} с</strong></span>}
+        <span>Постоянное хранение: <strong>{summary.persistent ? 'да' : 'нет'}</strong></span>
+        {summary.restored_from_file && <span>Источник: <strong>JSON-файл</strong></span>}
+        {summary.matched_by_name && <span>Мэтч: <strong>по названию РПД</strong></span>}
       </div>
+      {summary.persistent_path && <p className="muted">Файл банка: {summary.persistent_path}</p>}
 
       <div className="coverageTableWrap">
         <h3>Разделы банка</h3>

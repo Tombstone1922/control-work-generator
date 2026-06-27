@@ -2,6 +2,98 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.projectStatusDashboard {
+  margin-bottom: 0;
+  padding: 18px 20px;
+}
+
+.projectStatusHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.projectStatusHeader h2 {
+  margin-bottom: 0;
+  font-size: 18px;
+}
+
+.projectStatusScore {
+  min-width: 58px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3858d6;
+  font-weight: 900;
+}
+
+.projectStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.projectStatusItem {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e0e6f0;
+  border-radius: 16px;
+  background: #f8faff;
+  color: #66728a;
+}
+
+.projectStatusItem strong,
+.projectStatusItem small {
+  display: block;
+}
+
+.projectStatusItem strong {
+  color: #172033;
+  font-size: 13px;
+}
+
+.projectStatusItem small {
+  margin-top: 3px;
+  color: #66728a;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.projectStatusIcon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e9edf7;
+  color: #66728a;
+  font-weight: 900;
+}
+
+.projectStatusItemReady {
+  background: linear-gradient(135deg, #f2fff5, #f8fbff);
+  border-color: #bde8ca;
+}
+
+.projectStatusItemReady .projectStatusIcon {
+  background: #24a148;
+  color: #fff;
+}
+
+.projectStatusItemReady small {
+  color: #2e6940;
+}
+
 .emptyState {
   min-height: 260px;
   display: grid;
@@ -31,6 +123,81 @@
 
 .historyGridThree {
   grid-template-columns: 1.08fr 1fr 1fr;
+}
+
+.fosReadinessCard {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid #dfe6f5;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fbff, #f2fff6);
+}
+
+.fosReadinessScore {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #dfe6f5;
+}
+
+.fosReadinessScore span {
+  color: #66728a;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.fosReadinessScore strong {
+  color: #172033;
+  font-size: 38px;
+  line-height: 1;
+}
+
+.fosReadinessGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readinessPill {
+  display: grid;
+  align-content: center;
+  min-height: 64px;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #dfe6f5;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.readinessPill small,
+.readinessPill strong {
+  display: block;
+}
+
+.readinessPill small {
+  color: #66728a;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.readinessPill strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.readinessPillReady {
+  border-color: #bde8ca;
+  background: #f2fff5;
+}
+
+.readinessPillReady strong {
+  color: #1d6b35;
 }
 
 .toggleLabel {
@@ -112,6 +279,11 @@
   min-height: auto;
 }
 
+.darkTheme .projectStatusDashboard,
+.darkTheme .projectStatusItem,
+.darkTheme .fosReadinessCard,
+.darkTheme .fosReadinessScore,
+.darkTheme .readinessPill,
 .darkTheme .controlResultPanel span,
 .darkTheme .controlAnswerBox,
 .darkTheme .toggleLabel {
@@ -120,13 +292,26 @@
   color: #dbe6ff;
 }
 
+.darkTheme .projectStatusHeader h2,
+.darkTheme .projectStatusItem strong,
+.darkTheme .fosReadinessScore strong,
+.darkTheme .readinessPill strong,
 .darkTheme .controlResultPanel strong,
 .darkTheme .controlAnswerBox strong {
   color: #f4f7ff;
 }
 
+.darkTheme .projectStatusItem small,
+.darkTheme .fosReadinessScore span,
+.darkTheme .readinessPill small,
 .darkTheme .controlResultPanel small {
   color: #aab8d8;
+}
+
+.darkTheme .projectStatusItemReady,
+.darkTheme .readinessPillReady {
+  border-color: rgba(82, 211, 128, 0.38);
+  background: rgba(30, 68, 48, 0.56);
 }
 
 @media (min-width: 1540px) {
@@ -144,16 +329,26 @@
   .historyGridThree {
     grid-template-columns: 1fr;
   }
+
+  .projectStatusGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1100px) {
   .workspaceTabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .fosReadinessCard {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
-  .workspaceTabs {
+  .workspaceTabs,
+  .projectStatusGrid,
+  .fosReadinessGrid {
     grid-template-columns: 1fr;
   }
 

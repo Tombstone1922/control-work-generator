@@ -35,6 +35,9 @@ class DemoBankResponse(BaseModel):
     sample_items: list[AssessmentItemRead]
     llm: dict = Field(default_factory=dict)
     matched_by_name: bool = False
+    restored_from_file: bool = False
+    persistent: bool = False
+    persistent_path: str = ""
 
 
 @router.post("/{program_id}/seed", response_model=DemoBankResponse)

@@ -169,7 +169,7 @@ class AssessmentItemsGenerateRequest(BaseModel):
     section_code: str | None = None
     replace_existing: bool = False
     max_items_per_section: int = Field(default=40, ge=1, le=200)
-    generation_mode: str = Field(default="template", description="template | learned | narrow_llm | hybrid")
+    generation_mode: str = Field(default="template", description="template | learned | narrow_llm | hybrid | intelligent_v2")
     learned_max_items: int = Field(default=12, ge=1, le=200)
     narrow_max_items: int = Field(default=12, ge=1, le=200)
     fallback_to_template: bool = True
@@ -258,12 +258,3 @@ class GenerationResponse(BaseModel):
     status: str = "generated"
     review_comment: str = ""
     reviewed_by_user_id: str | None = None
-
-
-class GenerationUpdateRequest(BaseModel):
-    variants: List[ControlWorkVariant]
-
-
-class GenerationStatusUpdateRequest(BaseModel):
-    status: str
-    review_comment: str = ""

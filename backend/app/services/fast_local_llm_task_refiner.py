@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from app.schemas import AssessmentItemRead
 from app.services.assessment_item_smart_builder import normalize_topic
 from app.services.discipline_knowledge_base import get_topic_knowledge_context
-from app.services.local_llm_client import QWEN35_PROFILE, QWEN8_PROFILE, LocalLLMClient, get_local_llm_settings
+from app.services.local_llm_client import QWEN35_PROFILE, QWEN8_PROFILE, QWEN_SMALL_PROFILE, LocalLLMClient, get_local_llm_settings
 
 SYSTEM_PROMPT = """
 Ты методист вуза. Улучши оценочные задания по ФОС.
@@ -343,6 +343,8 @@ def _source_kind_for_profile(profile: str) -> str:
         return "local_llm_qwen35"
     if profile == QWEN8_PROFILE:
         return "local_llm_qwen8"
+    if profile == QWEN_SMALL_PROFILE:
+        return "local_llm_qwen_small"
     return "local_llm_qwen3"
 
 
@@ -351,6 +353,8 @@ def _label_for_profile(profile: str) -> str:
         return "Qwen3.5-9B"
     if profile == QWEN8_PROFILE:
         return "Qwen3-8B"
+    if profile == QWEN_SMALL_PROFILE:
+        return "Qwen Small"
     return "Qwen3 14B"
 
 

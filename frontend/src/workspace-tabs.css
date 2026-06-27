@@ -47,6 +47,43 @@
   margin: 0;
 }
 
+.controlResultHeader {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.controlResultPanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 640px;
+}
+
+.controlResultPanel span {
+  min-width: 92px;
+  min-height: 46px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 7px 12px;
+  border: 1px solid #dfe6f5;
+  border-radius: 14px;
+  background: #f8faff;
+}
+
+.controlResultPanel strong {
+  color: #172033;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.controlResultPanel small {
+  color: #66728a;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .controlAnswerBox {
   margin-top: 10px;
   padding: 12px 14px;
@@ -71,6 +108,34 @@
   min-height: auto;
 }
 
+.darkTheme .controlResultPanel span,
+.darkTheme .controlAnswerBox,
+.darkTheme .toggleLabel {
+  border-color: rgba(164, 184, 226, 0.28);
+  background: rgba(21, 34, 57, 0.82);
+  color: #dbe6ff;
+}
+
+.darkTheme .controlResultPanel strong,
+.darkTheme .controlAnswerBox strong {
+  color: #f4f7ff;
+}
+
+.darkTheme .controlResultPanel small {
+  color: #aab8d8;
+}
+
+@media (min-width: 1540px) {
+  .appHero .userBox {
+    position: fixed;
+    top: 78px;
+    right: max(22px, calc((100vw - 1220px) / 2 - 318px));
+    width: 286px;
+    z-index: 60;
+    box-shadow: 0 20px 50px rgba(50, 66, 104, 0.16);
+  }
+}
+
 @media (max-width: 1100px) {
   .workspaceTabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -84,5 +149,9 @@
 
   .demoBankActions > button {
     width: 100%;
+  }
+
+  .controlResultPanel span {
+    flex: 1 1 120px;
   }
 }

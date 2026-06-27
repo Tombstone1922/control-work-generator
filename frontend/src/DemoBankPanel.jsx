@@ -5,6 +5,8 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
   const [summary, setSummary] = useState(null);
   const [isSeeding, setSeeding] = useState(false);
   const [isOpening, setOpening] = useState(false);
+  const [isDownloadingCurrent, setDownloadingCurrent] = useState(false);
+  const [isDownloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => {
     setSummary(null);
@@ -55,6 +57,35 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
     }
   }
 
+  async function downloadCurrentBank() {
+    if (!program?.program_id) return setError('Сначала выберите текущую РПД.');
+    setDownloadingCurrent(true);
+    setError('');
+    try {
+      const response = await api.get(`/api/demo-bank/${program.program_id}/download-current`, { responseType: 'blob' });
+      downloadBlob(response.data, `bank_${safeFilename(program.filename || 'current_rpd')}.json`);
+      setSuccess('JSON-банк текущей РПД скачан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось скачать банк текущей РПД.');
+    } finally {
+      setDownloadingCurrent(false);
+    }
+  }
+
+  async function downloadAllBanks() {
+    setDownloadingAll(true);
+    setError('');
+    try {
+      const response = await api.get('/api/demo-bank/download/all', { responseType: 'blob' });
+      downloadBlob(response.data, 'prepared_banks_all.zip');
+      setSuccess('Архив со всеми подготовленными JSON-банками скачан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось скачать общий архив банков.');
+    } finally {
+      setDownloadingAll(false);
+    }
+  }
+
   return (
     <section className="card quickGenerationCard">
       <p className="eyebrow">Демонстрационный режим защиты</p>
@@ -74,13 +105,21 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
         <div className="demoModeBlock">
           <h3>Набор заданий</h3>
           <p className="muted">Этот режим запускается заранее. Общая система строит вопросы и ответы по РПД: устные вопросы, практику, тесты с A-D, эталонные ответы и критерии.</p>
-          <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Общая система набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
+          <div className="demoBankActions">
+            <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Общая система набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
+            <button className="secondary" type="button" onClick={downloadCurrentBank} disabled={isDownloadingCurrent || !program}>{isDownloadingCurrent ? 'Скачиваем...' : 'Скачать банк текущей РПД'}</button>
+            <button className="download" type="button" onClick={downloadAllBanks} disabled={isDownloadingAll}>{isDownloadingAll ? 'Скачиваем архив...' : 'Скачать весь банк'}</button>
+          </div>
         </div>
       ) : (
         <div className="demoModeBlock">
           <h3>Рабочий режим</h3>
           <p className="muted">Можно просто загрузить РПД заново. Если имя совпадает, например RP_09.03.02_5990_2925_2025, система найдет постоянный банк и покажет задания без генерации.</p>
-          <button className="primary" type="button" onClick={openWorkMode} disabled={isOpening || !program}>{isOpening ? 'Ищем банк по названию...' : 'Показать готовые задания'}</button>
+          <div className="demoBankActions">
+            <button className="primary" type="button" onClick={openWorkMode} disabled={isOpening || !program}>{isOpening ? 'Ищем банк по названию...' : 'Показать готовые задания'}</button>
+            <button className="secondary" type="button" onClick={downloadCurrentBank} disabled={isDownloadingCurrent || !program}>{isDownloadingCurrent ? 'Скачиваем...' : 'Скачать банк текущей РПД'}</button>
+            <button className="download" type="button" onClick={downloadAllBanks} disabled={isDownloadingAll}>{isDownloadingAll ? 'Скачиваем архив...' : 'Скачать весь банк'}</button>
+          </div>
         </div>
       )}
 
@@ -131,6 +170,21 @@ function PreparedBankSummary({ summary }) {
       )}
     </div>
   );
+}
+
+function downloadBlob(data, filename) {
+  const url = window.URL.createObjectURL(new Blob([data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function safeFilename(value) {
+  return String(value || 'bank').replace(/\.(docx|pdf|txt)$/i, '').replace(/[^a-zа-я0-9_-]+/gi, '_').toLowerCase();
 }
 
 export default DemoBankPanel;

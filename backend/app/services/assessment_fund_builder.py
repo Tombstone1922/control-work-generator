@@ -16,18 +16,27 @@ DEFAULT_LEVELS = [
     "Продвинутый (отлично)",
 ]
 
+OM_PROFILE_PLANNED_ITEMS = {
+    "oral": 40,
+    "practice": 20,
+    "credit": 32,
+    "credit_practice": 13,
+    "diagnostic": 40,
+}
+
 BASE_SECTIONS = [
     ("competency_matrix", "1. Перечень компетенций и уровни их сформированности", "competency_matrix"),
     ("current_oral", "2.1 Вопросы для устного опроса", "oral"),
     ("current_practice", "2.1 Практические задания для текущего контроля", "practice"),
-    ("diagnostic", "3. Итоговая диагностическая работа", "diagnostic"),
+    ("diagnostic", "2.3 Итоговая диагностическая работа по дисциплине", "diagnostic"),
     ("grading_rubric", "4. Критерии выставления оценок", "grading_rubric"),
 ]
 
 OPTIONAL_SECTIONS = [
     ("intermediate_exam_questions", "2.2 Вопросы для экзамена", "exam_questions"),
     ("intermediate_exam_practice", "2.2 Практические задания для экзамена", "exam_practice"),
-    ("intermediate_credit", "2.2 Вопросы и задания для зачета", "credit"),
+    ("intermediate_credit", "2.2 Вопросы к зачету", "credit"),
+    ("intermediate_credit_practice", "2.2 Практические задания для проведения зачета", "credit_practice"),
     ("control_work", "2.3 Контрольная работа", "control_work"),
     ("coursework", "2.4 Курсовая работа", "coursework"),
     ("course_project", "2.4 Курсовой проект", "course_project"),
@@ -41,7 +50,8 @@ ASSESSMENT_TYPE_LABELS = {
     "practice": "Практические задания",
     "exam_questions": "Вопросы для экзамена",
     "exam_practice": "Практические задания для экзамена",
-    "credit": "Зачет",
+    "credit": "Вопросы к зачету",
+    "credit_practice": "Практические задания к зачету",
     "control_work": "Контрольная работа",
     "coursework": "Курсовая работа",
     "course_project": "Курсовой проект",
@@ -174,6 +184,8 @@ def _build_sections(topics: list[str], assessment_types: list[str]) -> list[Asse
 def _planned_items(assessment_type: str, topics: list[str]) -> int:
     if assessment_type in SERVICE_ASSESSMENT_TYPES:
         return 0
+    if assessment_type in OM_PROFILE_PLANNED_ITEMS:
+        return OM_PROFILE_PLANNED_ITEMS[assessment_type]
     if assessment_type in COMPACT_HIGH_VOLUME_TYPES:
         return 15
     return 10
@@ -186,7 +198,7 @@ def _detect_assessment_types(source_text: str) -> list[str]:
     if re.search(r"\bэкзамен\w*", lower):
         types.extend(["exam_questions", "exam_practice"])
     if re.search(r"\bзач[её]т\w*", lower):
-        types.append("credit")
+        types.extend(["credit", "credit_practice"])
     if re.search(r"контрольн\w*\s+работ", lower):
         types.append("control_work")
     if re.search(r"курсов\w*\s+работ", lower):

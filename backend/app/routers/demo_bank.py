@@ -34,6 +34,7 @@ class DemoBankResponse(BaseModel):
     sections: list[DemoBankSection]
     sample_items: list[AssessmentItemRead]
     llm: dict = Field(default_factory=dict)
+    system: dict = Field(default_factory=dict)
     matched_by_name: bool = False
     restored_from_file: bool = False
     persistent: bool = False

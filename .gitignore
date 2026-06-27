@@ -19,6 +19,8 @@ backend/app/storage/reference_library/*
 !backend/app/storage/reference_library/.gitkeep
 backend/storage/models/*
 !backend/storage/models/.gitkeep
+backend/storage/prepared_banks/*
+!backend/storage/prepared_banks/.gitkeep
 models/*
 !models/.gitkeep
 *.gguf

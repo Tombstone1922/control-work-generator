@@ -20,6 +20,14 @@ try {
     Write-Host $_.Exception.Message -ForegroundColor Yellow
 }
 
+Write-Host "Checking Qwen Small endpoint on 8084..." -ForegroundColor Cyan
+try {
+    Invoke-RestMethod http://127.0.0.1:8084/v1/models | ConvertTo-Json -Depth 10
+} catch {
+    Write-Host "Qwen Small llama-server is not available on http://127.0.0.1:8084" -ForegroundColor Yellow
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+}
+
 Write-Host "Checking experimental Qwen3.5 9B endpoint on 8082..." -ForegroundColor Cyan
 try {
     Invoke-RestMethod http://127.0.0.1:8082/v1/models | ConvertTo-Json -Depth 10
@@ -40,6 +48,8 @@ if (Test-Path $VenvActivate) {
     python -m app.tools.test_local_llm
     Write-Host "Running backend local LLM diagnostic for Qwen3 8B profile..." -ForegroundColor Cyan
     python -m app.tools.test_local_llm qwen3_8b
+    Write-Host "Running backend local LLM diagnostic for Qwen Small profile..." -ForegroundColor Cyan
+    python -m app.tools.test_local_llm qwen_small
     Write-Host "Running backend local LLM diagnostic for Qwen3.5 9B profile..." -ForegroundColor Cyan
     python -m app.tools.test_local_llm qwen35_9b
 } else {

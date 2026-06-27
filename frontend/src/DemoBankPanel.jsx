@@ -1,0 +1,115 @@
+import React, { useEffect, useState } from 'react';
+
+function DemoBankPanel({ api, program, setError, setSuccess }) {
+  const [mode, setMode] = useState('seed');
+  const [summary, setSummary] = useState(null);
+  const [isSeeding, setSeeding] = useState(false);
+  const [isOpening, setOpening] = useState(false);
+
+  useEffect(() => {
+    setSummary(null);
+  }, [program?.program_id]);
+
+  async function seedBank() {
+    if (!program?.program_id) return setError('Сначала выберите или загрузите РПД.');
+    setSeeding(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.post(`/api/demo-bank/${program.program_id}/seed`);
+      setSummary(response.data);
+      setSuccess(`Банк заданий подготовлен: ${response.data.total_items} заданий. Теперь можно открыть рабочий режим.`);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось подготовить банк заданий.');
+    } finally {
+      setSeeding(false);
+    }
+  }
+
+  async function openWorkMode() {
+    if (!program?.program_id) return setError('Сначала выберите или загрузите РПД.');
+    setOpening(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.get(`/api/demo-bank/${program.program_id}/work-mode`);
+      setSummary(response.data);
+      if (response.data.ready) setSuccess('Рабочий режим открыт: задания взяты из подготовленного банка без генерации.');
+      else setError('Для этой РПД банк еще не набит. Сначала нажмите “Набить банк заданий”.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось открыть рабочий режим.');
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  return (
+    <section className="card quickGenerationCard">
+      <p className="eyebrow">Демонстрационный режим защиты</p>
+      <h2>Подготовленный банк заданий</h2>
+      <p className="muted">Здесь два режима: сначала набиваем банк под выбранную РПД, потом в рабочем режиме показываем задания сразу, без ожидания Qwen и долгой генерации.</p>
+
+      <div className="authTabs demoModeTabs">
+        <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
+        <button className={mode === 'work' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('work')}>Рабочий режим</button>
+      </div>
+
+      <div className="notice">
+        <strong>План банка:</strong> 40 устных вопросов, 20 практических заданий, 32 вопроса к зачету, 13 практических заданий к зачету, 40 диагностических заданий. Итого 145 элементов.
+      </div>
+
+      {mode === 'seed' ? (
+        <div className="demoModeBlock">
+          <h3>Набор заданий</h3>
+          <p className="muted">Этот режим готовит банк заранее. Его можно прогнать перед защитой для каждой загруженной РПД, чтобы потом рабочий режим открывался быстро.</p>
+          <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Набиваем банк...' : 'Набить банк заданий для текущей РПД'}</button>
+        </div>
+      ) : (
+        <div className="demoModeBlock">
+          <h3>Рабочий режим</h3>
+          <p className="muted">Показывает уже готовые задания из банка. Здесь нет обращения к локальной модели, поэтому на защите список появляется почти сразу.</p>
+          <button className="primary" type="button" onClick={openWorkMode} disabled={isOpening || !program}>{isOpening ? 'Открываем...' : 'Показать готовые задания'}</button>
+        </div>
+      )}
+
+      {summary && <PreparedBankSummary summary={summary} />}
+    </section>
+  );
+}
+
+function PreparedBankSummary({ summary }) {
+  return (
+    <div className="generationSummary demoBankSummary">
+      <strong>{summary.ready ? 'Банк готов' : 'Банк не подготовлен'}</strong>
+      <div className="itemBankStats">
+        <span>Всего: <strong>{summary.total_items}</strong></span>
+        <span>План: <strong>{summary.planned_items}</strong></span>
+        <span>Версия: <strong>{summary.model_version}</strong></span>
+        <span>Файл: <strong>{summary.filename}</strong></span>
+      </div>
+
+      <div className="coverageTableWrap">
+        <h3>Разделы банка</h3>
+        <table className="coverageTable">
+          <thead><tr><th>Раздел</th><th>Тип</th><th>План</th><th>Готово</th></tr></thead>
+          <tbody>{summary.sections.map((section) => <tr key={section.code}><td>{section.title}</td><td>{section.assessment_type}</td><td>{section.planned_items}</td><td>{section.generated_items}</td></tr>)}</tbody>
+        </table>
+      </div>
+
+      {summary.sample_items?.length > 0 && (
+        <div className="demoBankItems">
+          <h3>Примеры заданий в рабочем режиме</h3>
+          {summary.sample_items.map((item, index) => (
+            <article className="itemBankListItem demoBankItem" key={item.id}>
+              <div className="itemCardHeader"><strong>{index + 1}. {item.topic}</strong><span className="sourceBadge sourceLearned">готовый банк</span></div>
+              <p>{item.text}</p>
+              <small>{item.assessment_type} · {item.difficulty} · {item.competency_code || 'без компетенции'}</small>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default DemoBankPanel;

@@ -9,9 +9,10 @@ import './compact-generation.css';
 import './competency-editor.css';
 import './theme.css';
 import './dark-item-bank.css';
+import './workspace-tabs.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>,
+  </React.StrictMode>
 );

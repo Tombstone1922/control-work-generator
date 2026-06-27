@@ -28,7 +28,7 @@ from app.services.reference_library import find_om_examples_for_program, get_ref
 from app.services.role_policy import ensure_can_edit_fund_content
 
 INTELLIGENT_V2_MODE = "intelligent_v2"
-INTELLIGENT_V2_MODEL_VERSION = "intelligent-fos-generator-v2.0"
+INTELLIGENT_V2_MODEL_VERSION = "intelligent-fos-generator-v2.1-fast"
 
 # Базовый профиль составлен по реальному ОМ:
 # 40 устных вопросов, 20 практических текущего контроля,
@@ -43,13 +43,17 @@ OM_V2_SECTION_PLAN: list[tuple[str, str, str, int]] = [
 ]
 OM_V2_TOTAL_ITEMS = sum(item[3] for item in OM_V2_SECTION_PLAN)
 V2_LLM_TARGET_LIMIT = 40
-V2_LLM_BATCH_SIZE = 5
+# Было 5 => 8 запросов для 40 заданий. Теперь 8 => 5 запросов, JSON остается коротким,
+# потому что модель возвращает только text без answer/criteria.
+V2_LLM_BATCH_SIZE = 8
+V2_TEXT_MAX_CHARS = 520
 
 TEXT_ONLY_SYSTEM_PROMPT = """
-Ты методист вуза. Улучши формулировки оценочных материалов.
-Работай быстро. Не меняй тип задания. Не пиши рассуждения.
-Верни строго JSON без markdown: {"items":[{"index":0,"text":"..."}]}.
-Поле text должно быть коротким, конкретным и проверяемым.
+/no_think
+Ты методист вуза. Быстро улучши формулировки оценочных материалов.
+Не меняй тип задания. Не рассуждай. Не используй markdown в ответе.
+Верни только JSON: {"items":[{"index":0,"text":"..."}]}.
+Только поля index и text. Без answer, criteria и пояснений.
 """.strip()
 
 
@@ -81,7 +85,7 @@ class TextOnlyLLMProfile:
             "llm_ms": self.llm_ms,
             "avg_call_ms": self.avg_call_ms,
             "call_ms": call_ms[:12],
-            "mode": "intelligent-v2-text-only",
+            "mode": "intelligent-v2-text-only-fast",
             "batch_size": V2_LLM_BATCH_SIZE,
         }
 
@@ -259,7 +263,6 @@ def _standardize_sections_for_v2(
     sections = [AssessmentFundSection(**raw) for raw in raw_sections]
     by_code = {section.code: section for section in sections}
 
-    changed = False
     for code, title, assessment_type, planned in OM_V2_SECTION_PLAN:
         if code in by_code:
             section = by_code[code]
@@ -269,7 +272,6 @@ def _standardize_sections_for_v2(
             section.enabled = True
             section.topics = topics
             section.planned_items = planned
-            changed = True
         else:
             section = AssessmentFundSection(
                 code=code,
@@ -283,7 +285,6 @@ def _standardize_sections_for_v2(
             )
             sections.append(section)
             by_code[code] = section
-            changed = True
 
     target_types = {assessment_type for _, _, assessment_type, _ in OM_V2_SECTION_PLAN}
     assessment_types = list(dict.fromkeys(json.loads(fund.assessment_types_json or "[]") + list(target_types)))
@@ -363,7 +364,7 @@ def _refine_text_only_targets(
                 item.model_copy(update={
                     "text": text,
                     "source_kind": "local_llm_qwen3_v2",
-                    "source_context": f"Intelligent generator 2.0 text-only 14B refinement; profile={settings.profile}; model={settings.model}; batch_size={V2_LLM_BATCH_SIZE}.",
+                    "source_context": f"Intelligent generator 2.0 fast text-only 14B refinement; profile={settings.profile}; model={settings.model}; batch_size={V2_LLM_BATCH_SIZE}.",
                 })
             )
             profile.refined_items += 1
@@ -383,28 +384,26 @@ def _build_text_only_prompt(
     discipline_name: str,
     all_topics: list[str],
 ) -> str:
-    payload = {
-        "discipline_name": discipline_name,
-        "items": [
-            {
-                "index": batch_start + index,
-                "assessment_type": item.assessment_type,
-                "topic": item.topic,
-                "difficulty": item.difficulty,
-                "competency_code": item.competency_code,
-                "current_text": _trim(item.text, 260),
-                "contract": _type_contract(item.assessment_type),
-            }
-            for index, item in enumerate(batch)
-        ],
-        "requirements": [
-            "Верни JSON с массивом items, один результат на каждый входной index.",
-            "Улучшай только поле text.",
-            "Не добавляй answer, criteria, markdown и пояснения.",
-            "Формулировка должна быть короче 550 символов.",
-        ],
-    }
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Не markdown: компактный line/TSV-подобный формат короче JSON-входа и быстрее для локальной модели.
+    lines = [
+        f"Дисциплина: {_compact(discipline_name, 90)}",
+        "Задача: улучшить только формулировку text. Вернуть JSON: {\"items\":[{\"index\":0,\"text\":\"...\"}]}",
+        f"Ограничение: text <= {V2_TEXT_MAX_CHARS} символов; один результат на каждый index; без markdown и пояснений.",
+        "Данные: index|type|topic|level|competency|contract|current_text",
+    ]
+    for index, item in enumerate(batch):
+        lines.append(
+            "|".join([
+                str(batch_start + index),
+                _compact(item.assessment_type, 32),
+                _compact(item.topic, 90),
+                _compact(item.difficulty, 16),
+                _compact(item.competency_code, 32),
+                _compact(_type_contract(item.assessment_type), 120),
+                _compact(item.text, 210),
+            ])
+        )
+    return "\n".join(lines)
 
 
 def _extract_text_candidates(data: dict) -> list[dict]:
@@ -521,6 +520,11 @@ def _count_by_type(items: list[AssessmentItemRead]) -> dict[str, int]:
 
 def _clean_text(value) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip(" .;:-—\t\n\r")
+
+
+def _compact(value: str, limit: int) -> str:
+    value = _clean_text(value).replace("|", "/")
+    return value if len(value) <= limit else f"{value[:limit].rstrip()}…"
 
 
 def _trim(value: str, limit: int) -> str:

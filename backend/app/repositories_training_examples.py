@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models
@@ -13,6 +13,7 @@ TRAINING_DIR = Path(__file__).resolve().parent / "storage" / "training"
 TRAINING_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_LABELS = {"good", "bad", "needs_revision"}
+AUTO_GOOD_SOURCE = "auto_good_after_generation"
 
 
 def _dump(value) -> str:
@@ -64,7 +65,55 @@ def create_training_example_from_item(
     if item is None or item.fund_id != fund.id:
         return None
 
-    entity = models.TrainingExample(
+    entity = _build_training_entity_from_item(
+        item=item,
+        fund=fund,
+        user=user,
+        quality_label=label,
+        teacher_comment=payload.teacher_comment.strip(),
+        source="expert_feedback",
+    )
+    db.add(entity)
+    db.commit()
+    db.refresh(entity)
+    return training_example_to_schema(entity)
+
+
+def sync_fund_items_as_good_examples(db: Session, fund_id: str, user: models.User) -> TrainingDatasetStats | None:
+    fund = _get_fund_for_user(db, fund_id, user)
+    if fund is None:
+        return None
+
+    db.execute(delete(models.TrainingExample).where(models.TrainingExample.fund_id == fund.id))
+    items = db.scalars(
+        select(models.AssessmentItem)
+        .where(models.AssessmentItem.fund_id == fund.id)
+        .order_by(models.AssessmentItem.created_at.asc())
+    ).all()
+
+    for item in items:
+        item.status = "approved"
+        db.add(_build_training_entity_from_item(
+            item=item,
+            fund=fund,
+            user=user,
+            quality_label="good",
+            teacher_comment="Автоматически помечено как хороший пример после генерации банка ФОС.",
+            source=AUTO_GOOD_SOURCE,
+        ))
+    db.commit()
+    return get_training_dataset_stats(db, user, fund_id=fund.id)
+
+
+def _build_training_entity_from_item(
+    item: models.AssessmentItem,
+    fund: models.AssessmentFund,
+    user: models.User,
+    quality_label: str,
+    teacher_comment: str,
+    source: str,
+) -> models.TrainingExample:
+    return models.TrainingExample(
         id=str(uuid4()),
         fund_id=fund.id,
         item_id=item.id,
@@ -79,14 +128,10 @@ def create_training_example_from_item(
         text=item.text,
         answer=item.answer,
         criteria_json=item.criteria_json,
-        quality_label=label,
-        teacher_comment=payload.teacher_comment.strip(),
-        source="expert_feedback",
+        quality_label=quality_label,
+        teacher_comment=teacher_comment,
+        source=source,
     )
-    db.add(entity)
-    db.commit()
-    db.refresh(entity)
-    return training_example_to_schema(entity)
 
 
 def list_training_examples_for_user(

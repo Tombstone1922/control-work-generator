@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import models
@@ -33,6 +33,8 @@ class DemoBankResponse(BaseModel):
     planned_items: int
     sections: list[DemoBankSection]
     sample_items: list[AssessmentItemRead]
+    llm: dict = Field(default_factory=dict)
+    matched_by_name: bool = False
 
 
 @router.post("/{program_id}/seed", response_model=DemoBankResponse)

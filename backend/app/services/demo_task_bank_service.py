@@ -15,15 +15,16 @@ from app import models
 from app.repositories_assessment_items import list_items, replace_items_for_sections
 from app.schemas import AssessmentCompetencyRead, AssessmentFundSection, AssessmentItemRead
 from app.services.assessment_fund_builder import validate_assessment_fund
+from app.services.contextual_task_builder import build_contextual_task
 from app.services.local_llm_client import LocalLLMClient, get_local_llm_settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PERSISTENT_BANK_DIR = BACKEND_DIR / 'storage' / 'prepared_banks'
 
 BANK_TITLE = 'Подготовленный банк заданий'
-SOURCE_KIND = 'prepared_task_bank'
-QWEN_SOURCE_KIND = 'prepared_qwen_bank'
-MODEL_VERSION = 'prepared-qwen-bank-v2.1-persistent'
+SOURCE_KIND = 'prepared_system_bank'
+QWEN_SOURCE_KIND = 'prepared_system_qwen_bank'
+MODEL_VERSION = 'prepared-system-bank-v3.0-context-qwen'
 SECTIONS = [
     ('current_oral', '2.1 Вопросы для устного опроса', 'oral', 40),
     ('current_practice', '2.1 Практические задания текущего контроля', 'practice', 20),
@@ -33,33 +34,21 @@ SECTIONS = [
 ]
 TOTAL = sum(item[3] for item in SECTIONS)
 DIFF = ('easy', 'medium', 'medium', 'hard')
-SCENARIOS = (
-    'модуля анализа рабочей программы дисциплины',
-    'функции извлечения тем и компетенций',
-    'компонента формирования контрольной работы',
-    'банка заданий ФОС',
-    'модуля проверки качества задания',
-    'функции экспорта материалов в DOCX',
-    'рабочего режима преподавателя',
-    'административной панели',
-)
-ARTIFACTS = (
-    'псевдокод функции',
-    'таблицу входных и выходных данных',
-    'набор тест-кейсов',
-    'чек-лист проверки результата',
-    'описание пользовательского сценария',
-    'фрагмент алгоритма',
-)
-QWEN_BATCH_SIZE = 8
+QWEN_BATCH_SIZE = 5
 
 SYSTEM_PROMPT = '''
 /no_think
-Ты методист и преподаватель программной инженерии. Нужно подготовить адекватные задания ФОС по РПД.
-Пиши конкретно, без воды. Для устного опроса делай вопросы вида: Назовите назначение..., Что делает функция..., Объясните, зачем нужен модуль...
-Для практики требуй конкретный проверяемый результат: алгоритм, псевдокод, тест-кейсы, таблицу, схему.
-Для diagnostic делай тестовый вопрос с 4 вариантами A-D и одним правильным ответом.
-Верни только JSON с массивом items. Каждый элемент: index, text, answer, criteria.
+Ты методист и преподаватель программной инженерии. Работай не как свободный чат-бот, а как часть системы генерации ФОС.
+У тебя есть: тема из РПД, компетенция, контекст РПД, черновик context-builder и черновой ответ.
+Сделай реальное задание и реальный эталонный ответ. Не пиши общую воду.
+
+Правила:
+1. Для oral и credit формулируй конкретный устный вопрос: «Назовите назначение...», «Что делает функция...», «Объясните, зачем нужен модуль...», «Какие входные данные и результат...». 
+2. Для practice и credit_practice требуй проверяемый артефакт: псевдокод, алгоритм, таблицу входных/выходных данных, тест-кейсы, чек-лист или схему.
+3. Для diagnostic обязательно сделай тестовый вопрос с вариантами A, B, C, D и одним правильным вариантом.
+4. Ответ должен быть содержательным: не «ответ должен раскрывать», а конкретно что должен сказать/выбрать студент.
+5. Используй только переданный контекст РПД и тему. Не выдумывай случайные технологии, которых нет в контексте.
+6. Верни только JSON: {"items":[{"index":0,"text":"...","answer":"...","criteria":["...","..."]}]}.
 '''.strip()
 
 
@@ -228,35 +217,94 @@ def _ensure_competencies(db: Session, fund: models.AssessmentFund, codes: list[s
 
 
 def _build_items(fund: models.AssessmentFund, program: models.Program) -> list[AssessmentItemRead]:
-    topics = cycle(_topics(program))
-    comps = cycle(_competencies(program))
+    topics = _topics(program)
+    competencies = _competencies(program)
+    topic_cycle = cycle(topics)
+    comp_cycle = cycle(competencies)
     items: list[AssessmentItemRead] = []
+    used_texts: list[str] = []
+
     for code, _title, assessment_type, count in SECTIONS:
         for index in range(count):
-            topic = next(topics)
-            comp = next(comps)
+            topic = next(topic_cycle)
+            comp = next(comp_cycle)
+            difficulty = DIFF[index % len(DIFF)]
+            item_type = _item_type(assessment_type)
+            draft = build_contextual_task(
+                discipline_name=_discipline_name(program),
+                topic=topic,
+                all_topics=topics,
+                assessment_type=assessment_type,
+                item_type=item_type,
+                index=index,
+                difficulty=difficulty,
+                used_texts=used_texts,
+            )
+            text, answer, criteria = _adapt_system_draft(assessment_type, topic, index, draft.text, draft.answer, draft.criteria)
+            used_texts.append(text)
             items.append(AssessmentItemRead(
-                id=str(uuid4()), fund_id=fund.id, section_code=code, assessment_type=assessment_type,
-                item_type=_item_type(assessment_type), topic=topic, competency_code=comp,
-                indicator=f'Проверяется тема «{topic}» и компетенция {comp}.', difficulty=DIFF[index % len(DIFF)],
-                text=_text(assessment_type, topic, index), answer=_answer(assessment_type, topic), criteria=_criteria(assessment_type),
-                source_context='Подготовленный банк заданий. На этапе набора формулировка может улучшаться локальной моделью Qwen.',
-                source_kind=SOURCE_KIND, status='approved',
+                id=str(uuid4()),
+                fund_id=fund.id,
+                section_code=code,
+                assessment_type=assessment_type,
+                item_type=item_type,
+                topic=topic,
+                competency_code=comp,
+                indicator=_indicator(program, topic, comp),
+                difficulty=difficulty,
+                text=text,
+                answer=answer,
+                criteria=criteria,
+                source_context=f'Общая система: РПД + context-builder + предметный контекст + Qwen-refiner. Контекст темы: {_topic_context(program, topic, 220)}',
+                source_kind=SOURCE_KIND,
+                status='approved',
             ))
     return items
+
+
+def _adapt_system_draft(kind: str, topic: str, index: int, draft_text: str, draft_answer: str, draft_criteria: list[str]) -> tuple[str, str, list[str]]:
+    context_hint = _function_or_module_hint(topic, index)
+    if kind in {'oral', 'credit'}:
+        stems = (
+            f'Вопрос: назовите назначение {context_hint} по теме «{topic}». Какие входные данные он использует и какой результат должен вернуть?',
+            f'Вопрос: что делает {context_hint} по теме «{topic}» и как проверить корректность его работы?',
+            f'Вопрос: объясните, зачем нужен {context_hint} по теме «{topic}» в составе программного обеспечения.',
+        )
+        text = stems[index % len(stems)]
+        answer = f'Эталонный ответ: {context_hint.capitalize()} нужен для выполнения операции по теме «{topic}»: принимает исходные данные, обрабатывает их по заданным правилам, возвращает проверяемый результат и должен обрабатывать ошибочные входные данные.'
+        criteria = ['Назначение функции или модуля объяснено конкретно.', 'Указаны входные данные и результат.', 'Описана проверка корректности.', 'Ответ связан с темой РПД.']
+    elif kind == 'diagnostic':
+        text = f'Тестовое задание: что делает {context_hint} по теме «{topic}»?\nA. Принимает входные данные, выполняет обработку по правилам темы и возвращает проверяемый результат\nB. Только изменяет внешний вид страницы без обработки данных\nC. Удаляет исходные данные без сохранения результата\nD. Запускает приложение без учета входных параметров'
+        answer = f'Правильный ответ: A. {context_hint.capitalize()} должен выполнять обработку по теме «{topic}», возвращать проверяемый результат и не сводиться к изменению интерфейса или удалению данных.'
+        criteria = ['Выбран вариант A.', 'Дано краткое обоснование выбора.', 'Пояснение связано с назначением функции или модуля.']
+    else:
+        artifact = _artifact(index)
+        text = f'Практическое задание: по теме «{topic}» разработайте {artifact} для {context_hint}. Укажите входные данные, шаги обработки, ожидаемый результат и способ проверки корректности.'
+        answer = f'Эталонный ответ: должен быть представлен {artifact}; в нем указаны входные данные, последовательность обработки, ожидаемый результат, обработка ошибок и проверка результата по теме «{topic}».'
+        criteria = ['Артефакт соответствует теме и условию.', 'Указаны входные данные и результат.', 'Описан алгоритм или порядок действий.', 'Есть способ проверки корректности.']
+
+    if draft_text and len(text) < 90:
+        text = draft_text
+    if not answer and draft_answer:
+        answer = draft_answer
+    if not criteria and draft_criteria:
+        criteria = draft_criteria
+    return text, answer, criteria
 
 
 def _refine_with_qwen(items: list[AssessmentItemRead], program: models.Program) -> tuple[list[AssessmentItemRead], dict]:
     settings = get_local_llm_settings(None)
     if not settings.enabled:
-        return items, {'enabled': False, 'used': False, 'calls': 0, 'refined': 0, 'seconds': 0}
-    settings.max_tokens = max(settings.max_tokens, 2600)
-    settings.timeout_seconds = max(settings.timeout_seconds, 140)
+        return items, {'enabled': False, 'used': False, 'calls': 0, 'refined': 0, 'seconds': 0, 'pipeline': 'context-builder-only'}
+    settings.max_tokens = max(settings.max_tokens, 3200)
+    settings.timeout_seconds = max(settings.timeout_seconds, 180)
     client = LocalLLMClient(settings)
     started = time.perf_counter()
     result = list(items)
     refined = 0
     calls = 0
+    rejected = 0
+
     for start in range(0, len(items), QWEN_BATCH_SIZE):
         batch = items[start:start + QWEN_BATCH_SIZE]
         data = client.chat_json(system_prompt=SYSTEM_PROMPT, user_prompt=_prompt(batch, program, start))
@@ -266,31 +314,44 @@ def _refine_with_qwen(items: list[AssessmentItemRead], program: models.Program) 
             if not isinstance(idx, int) or idx < 0 or idx >= len(result):
                 continue
             item = result[idx]
-            text = _clean(raw.get('text'))
-            if len(text) < 40:
+            text = _repair_prefix(_clean(raw.get('text')), item.assessment_type)
+            answer = _clean(raw.get('answer'))
+            criteria = raw.get('criteria') if isinstance(raw.get('criteria'), list) else []
+            criteria = [str(value).strip() for value in criteria if str(value).strip()][:5]
+            if not _usable_refinement(item, text, answer):
+                rejected += 1
                 continue
-            answer = _clean(raw.get('answer')) or item.answer
-            criteria = raw.get('criteria') if isinstance(raw.get('criteria'), list) else item.criteria
             result[idx] = item.model_copy(update={
-                'text': _repair_prefix(text, item.assessment_type),
+                'text': text,
                 'answer': answer,
-                'criteria': [str(value).strip() for value in criteria if str(value).strip()][:5] or item.criteria,
+                'criteria': criteria or item.criteria,
                 'source_kind': QWEN_SOURCE_KIND,
-                'source_context': f'Подготовленный банк: формулировка улучшена локальной Qwen до защиты; профиль={settings.profile}; модель={settings.model}.',
+                'source_context': f'Общая система: РПД-контекст + context-builder + локальный Qwen-refiner; профиль={settings.profile}; модель={settings.model}.',
             })
             refined += 1
-    return result, {'enabled': True, 'used': refined > 0, 'calls': calls, 'refined': refined, 'seconds': int(time.perf_counter() - started), 'model': settings.model}
+    return result, {'enabled': True, 'used': refined > 0, 'calls': calls, 'refined': refined, 'rejected': rejected, 'seconds': int(time.perf_counter() - started), 'model': settings.model, 'pipeline': 'rpd-context-builder-qwen'}
 
 
 def _prompt(batch: list[AssessmentItemRead], program: models.Program, start: int) -> str:
-    rows = [
+    parts = [
         f'РПД: {program.filename}',
         f'Дисциплина: {_discipline_name(program)}',
-        'Формат: index|type|topic|competency|draft',
+        'Нужно улучшить элементы, не теряя тему и тип задания.',
     ]
     for offset, item in enumerate(batch):
-        rows.append('|'.join([str(start + offset), item.assessment_type, _compact(item.topic, 90), _compact(item.competency_code, 40), _compact(item.text, 240)]))
-    return '\n'.join(rows)
+        idx = start + offset
+        context = _topic_context(program, item.topic, 520)
+        parts.extend([
+            f'ITEM {idx}',
+            f'type: {item.assessment_type}',
+            f'topic: {_compact(item.topic, 120)}',
+            f'competency: {_compact(item.competency_code, 80)}',
+            f'context: {context}',
+            f'draft_question: {_compact(item.text, 420)}',
+            f'draft_answer: {_compact(item.answer, 360)}',
+            f'contract: {_contract(item.assessment_type)}',
+        ])
+    return '\n'.join(parts)
 
 
 def _extract(data) -> list[dict]:
@@ -302,37 +363,32 @@ def _extract(data) -> list[dict]:
     return []
 
 
+def _usable_refinement(item: AssessmentItemRead, text: str, answer: str) -> bool:
+    lower = text.lower()
+    if len(text) < 45 or len(answer) < 35:
+        return False
+    if any(bad in lower for bad in ('как языковая модель', 'невозможно определить', 'нет данных', 'json')):
+        return False
+    if item.assessment_type == 'diagnostic':
+        return all(mark in text for mark in ('A.', 'B.', 'C.', 'D.')) and ('правиль' in answer.lower() or 'ответ' in answer.lower())
+    if item.assessment_type in {'practice', 'credit_practice'}:
+        return lower.startswith('практическое задание') or any(word in lower[:180] for word in ('разработайте', 'составьте', 'подготовьте', 'опишите'))
+    return lower.startswith('вопрос') or '?' in text[:260]
+
+
 def _text(kind: str, topic: str, index: int) -> str:
-    scenario = SCENARIOS[index % len(SCENARIOS)]
-    artifact = ARTIFACTS[index % len(ARTIFACTS)]
-    if kind == 'oral':
-        stems = (
-            f'Вопрос: назовите назначение функции или модуля, связанного с темой «{topic}», и объясните, какие данные он обрабатывает.',
-            f'Вопрос: что делает компонент по теме «{topic}» в составе {scenario} и какой результат он должен вернуть пользователю?',
-            f'Вопрос: объясните, зачем нужна тема «{topic}» при разработке программного обеспечения, и приведите пример функции или метода.',
-        )
-        return stems[index % len(stems)]
-    if kind == 'credit':
-        return f'Вопрос: объясните, что выполняет модуль или функция по теме «{topic}», какие входные данные используются и какой результат должен быть получен.'
-    if kind == 'diagnostic':
-        return f'Тестовое задание: что делает функция, отвечающая за обработку темы «{topic}» в рамках {scenario}?\nA. Выполняет основную обработку данных и возвращает проверяемый результат\nB. Только изменяет цвет интерфейса\nC. Удаляет исходные данные без проверки\nD. Запускает приложение без учета входных параметров'
-    return f'Практическое задание: для {scenario} подготовьте {artifact} по теме «{topic}», укажите входные данные, результат работы и способ проверки корректности.'
+    text, _, _ = _adapt_system_draft(kind, topic, index, '', '', [])
+    return text
 
 
 def _answer(kind: str, topic: str) -> str:
-    if kind == 'diagnostic':
-        return f'Правильный ответ: A. Функция должна выполнять основную обработку по теме «{topic}» и возвращать проверяемый результат.'
-    if kind in {'oral', 'credit'}:
-        return f'Ответ должен объяснять назначение функции, метода или модуля по теме «{topic}», входные данные, результат и пример применения.'
-    return f'Результат должен быть проверяемым, соответствовать теме «{topic}», содержать краткое обоснование и способ проверки.'
+    _, answer, _ = _adapt_system_draft(kind, topic, 0, '', '', [])
+    return answer
 
 
 def _criteria(kind: str) -> list[str]:
-    if kind in {'oral', 'credit'}:
-        return ['Назначение функции или модуля объяснено корректно.', 'Указаны входные данные и результат.', 'Приведен пример применения.', 'Есть вывод по теме.']
-    if kind == 'diagnostic':
-        return ['Выбран один вариант ответа.', 'Ответ соответствует теме.', 'Приведено краткое обоснование.']
-    return ['Результат проверяем.', 'Решение соответствует условию.', 'Описан способ проверки.', 'Есть обоснование.']
+    _, _, criteria = _adapt_system_draft(kind, 'тема дисциплины', 0, '', '', [])
+    return criteria
 
 
 def _summary(program: models.Program, fund: models.AssessmentFund, items: list[AssessmentItemRead], built_now: bool, llm_meta: dict, *, restored_from_file: bool = False, matched_by_name: bool = False) -> dict:
@@ -374,7 +430,7 @@ def _empty(program: models.Program) -> dict:
         'planned_items': TOTAL,
         'sections': [{'code': code, 'title': title, 'assessment_type': typ, 'planned_items': plan, 'generated_items': 0} for code, title, typ, plan in SECTIONS],
         'sample_items': [],
-        'llm': {'enabled': False, 'used': False, 'calls': 0, 'refined': 0, 'seconds': 0},
+        'llm': {'enabled': False, 'used': False, 'calls': 0, 'refined': 0, 'seconds': 0, 'pipeline': 'not-ready'},
         'matched_by_name': False,
         'restored_from_file': False,
         'persistent': bank_path.exists(),
@@ -385,7 +441,7 @@ def _empty(program: models.Program) -> dict:
 def _save_bank_file(*, program: models.Program, items: list[AssessmentItemRead], llm_meta: dict) -> None:
     PERSISTENT_BANK_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
-        'schema_version': 1,
+        'schema_version': 2,
         'model_version': MODEL_VERSION,
         'source_filename': program.filename,
         'bank_key': _name_key(program.filename),
@@ -429,7 +485,7 @@ def _bank_file_path(program: models.Program) -> Path:
 
 
 def _sections(topics: list[str]) -> list[AssessmentFundSection]:
-    return [AssessmentFundSection(code=code, title=title, description=f'Подготовленный Qwen-банк заданий. План: {plan}.', assessment_type=typ, enabled=True, topics=topics, planned_items=plan, generated_items=plan) for code, title, typ, plan in SECTIONS]
+    return [AssessmentFundSection(code=code, title=title, description=f'Подготовленный банк общей системы. План: {plan}.', assessment_type=typ, enabled=True, topics=topics, planned_items=plan, generated_items=plan) for code, title, typ, plan in SECTIONS]
 
 
 def _competency_schemas(codes: list[str]) -> list[AssessmentCompetencyRead]:
@@ -444,12 +500,79 @@ def _competencies(program: models.Program) -> list[str]:
     return [str(item).strip() for item in _load(program.competencies_json) if str(item).strip()] or ['ПК-1']
 
 
+def _learning_outcomes(program: models.Program) -> list[str]:
+    return [str(item).strip() for item in _load(program.learning_outcomes_json) if str(item).strip()]
+
+
 def _discipline_name(program: models.Program) -> str:
     return program.filename.rsplit('.', 1)[0].replace('_', ' ').strip() or 'Наименование дисциплины'
 
 
 def _item_type(kind: str) -> str:
     return {'oral': 'theoretical_open', 'credit': 'theoretical_open', 'practice': 'practice', 'credit_practice': 'practice', 'diagnostic': 'single_choice'}.get(kind, 'open')
+
+
+def _indicator(program: models.Program, topic: str, competency: str) -> str:
+    context = _topic_context(program, topic, 180)
+    if context:
+        return f'Проверяется тема «{topic}», компетенция {competency}. Контекст РПД: {context}'
+    return f'Проверяется тема «{topic}» и компетенция {competency}.'
+
+
+def _topic_context(program: models.Program, topic: str, limit: int = 420) -> str:
+    topic_words = [word for word in re.split(r'\W+', topic.lower().replace('ё', 'е')) if len(word) >= 5]
+    candidates: list[str] = []
+    for value in _learning_outcomes(program):
+        if _has_topic_overlap(value, topic_words):
+            candidates.append(value)
+    for raw_line in re.split(r'[\n\r]+', program.text_preview or ''):
+        line = _clean(raw_line)
+        if 20 <= len(line) <= 260 and _has_topic_overlap(line, topic_words):
+            candidates.append(line)
+        if len(' '.join(candidates)) > limit * 1.5:
+            break
+    if not candidates:
+        outcomes = _learning_outcomes(program)
+        candidates = outcomes[:2] if outcomes else [f'Тема РПД: {topic}']
+    value = '; '.join(dict.fromkeys(candidates))
+    return _compact(value, limit)
+
+
+def _has_topic_overlap(value: str, topic_words: list[str]) -> bool:
+    if not topic_words:
+        return False
+    normalized = value.lower().replace('ё', 'е')
+    return any(word in normalized for word in topic_words[:6])
+
+
+def _function_or_module_hint(topic: str, index: int) -> str:
+    topic_lower = topic.lower()
+    if any(word in topic_lower for word in ('данн', 'баз', 'sql', 'хранен')):
+        variants = ('функции сохранения и получения данных', 'модуля работы с данными', 'метода проверки структуры данных')
+    elif any(word in topic_lower for word in ('интерфейс', 'react', 'пользоват', 'форм')):
+        variants = ('компонента пользовательского интерфейса', 'функции обработки действия пользователя', 'модуля отображения результата')
+    elif any(word in topic_lower for word in ('тест', 'качеств', 'провер')):
+        variants = ('функции проверки качества результата', 'модуля валидации', 'набора тест-кейсов')
+    elif any(word in topic_lower for word in ('алгоритм', 'генерац', 'нейро', 'модель')):
+        variants = ('алгоритма генерации задания', 'модуля интеллектуальной обработки', 'функции формирования результата')
+    else:
+        variants = ('функции обработки выбранной темы', 'модуля решения прикладной задачи', 'компонента программного обеспечения')
+    return variants[index % len(variants)]
+
+
+def _artifact(index: int) -> str:
+    artifacts = ('псевдокод функции', 'таблицу входных и выходных данных', 'набор тест-кейсов', 'чек-лист проверки', 'описание алгоритма', 'схему компонентов')
+    return artifacts[index % len(artifacts)]
+
+
+def _contract(kind: str) -> str:
+    if kind in {'oral', 'credit'}:
+        return 'Сделай один конкретный устный вопрос и конкретный эталонный ответ.'
+    if kind in {'practice', 'credit_practice'}:
+        return 'Сделай практическое задание с проверяемым результатом и эталонным описанием результата.'
+    if kind == 'diagnostic':
+        return 'Сделай тест с вариантами A-D и правильным ответом с объяснением.'
+    return 'Сделай задание по типу раздела ФОС.'
 
 
 def _repair_prefix(text: str, kind: str) -> str:

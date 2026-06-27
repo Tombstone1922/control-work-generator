@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-const QWEN_SEED_MODES = new Set(['qwen_seed_good', 'qwen35_seed_good', 'qwen8_seed_good']);
+const QWEN_SEED_MODES = new Set(['qwen_seed_good', 'qwen35_seed_good', 'qwen8_seed_good', 'qwen_small_seed_good']);
 
 function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, setSuccess, onFundRefresh }) {
   const [items, setItems] = useState([]);
@@ -352,7 +352,8 @@ function LearningModePanel({ generationMode, setGenerationMode, stats }) {
   const isQwenSeed = generationMode === 'qwen_seed_good';
   const isQwen35Seed = generationMode === 'qwen35_seed_good';
   const isQwen8Seed = generationMode === 'qwen8_seed_good';
-  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="qwen_seed_good">Qwen3 14B: сгенерировать и пометить как хорошие</option><option value="qwen8_seed_good">Qwen3 8B: быстрый кандидат</option><option value="qwen35_seed_good">Qwen3.5 9B: быстрый эксперимент</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{isQwenSeed && <div className="notice">Этот режим нужен для разового наполнения обучающей выборки: Qwen3 14B формирует задания, банк обновляется, а пригодные результаты автоматически сохраняются как хорошие примеры.</div>}{isQwen8Seed && <div className="notice">Быстрый кандидат на замену 14B: используется локальный сервер Qwen3-8B на отдельном порту. Пригодные результаты автоматически попадают в хорошие примеры.</div>}{isQwen35Seed && <div className="notice">Экспериментальный режим: используется локальный сервер Qwen3.5-9B на отдельном порту. Пригодные результаты также автоматически попадают в хорошие примеры.</div>}{!hasGoodExamples && generationMode !== 'template' && !QWEN_SEED_MODES.has(generationMode) && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
+  const isQwenSmallSeed = generationMode === 'qwen_small_seed_good';
+  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор ФОС: он учитывает РПД, context-module, OM/ФОС-примеры, экспертную выборку и локальную LLM.</p></div><div className="learningModeGrid simplifiedLearningModeGrid"><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="narrow_llm">Интеллектуальный генератор ФОС</option><option value="qwen_seed_good">Qwen3 14B: сгенерировать и пометить как хорошие</option><option value="qwen8_seed_good">Qwen3 8B: быстрый кандидат</option><option value="qwen_small_seed_good">Qwen Small 3/4B: максимальная скорость</option><option value="qwen35_seed_good">Qwen3.5 9B: быстрый эксперимент</option><option value="hybrid">Интеллектуальный генератор + шаблонная страховка</option><option value="learned">Генерация по экспертным примерам</option><option value="template">Базовый шаблонный режим</option></select></label></div>{isQwenSeed && <div className="notice">Этот режим нужен для разового наполнения обучающей выборки: Qwen3 14B формирует задания, банк обновляется, а пригодные результаты автоматически сохраняются как хорошие примеры.</div>}{isQwen8Seed && <div className="notice">Быстрый кандидат на замену 14B: используется локальный сервер Qwen3-8B на отдельном порту. Пригодные результаты автоматически попадают в хорошие примеры.</div>}{isQwenSmallSeed && <div className="notice">Максимально быстрый тест малой модели: Qwen2.5-3B или Qwen3-4B на отдельном порту. Если качество/JSON будет слабым, режим просто отключим.</div>}{isQwen35Seed && <div className="notice">Экспериментальный режим: используется локальный сервер Qwen3.5-9B на отдельном порту. Пригодные результаты также автоматически попадают в хорошие примеры.</div>}{!hasGoodExamples && generationMode !== 'template' && !QWEN_SEED_MODES.has(generationMode) && <div className="notice">Если экспертных примеров мало, система автоматически использует безопасные шаблоны как резерв.</div>}</section>;
 }
 
 function GenerationSummary({ generation }) {
@@ -363,7 +364,7 @@ function GenerationProfiling({ profiling }) {
   if (!profiling || !profiling.total_ms) return null;
   const llm = profiling.local_llm || {};
   const stages = profiling.stages_ms || {};
-  const llmLabel = llm.profile === 'qwen35_9b' ? 'Qwen3.5-9B' : llm.profile === 'qwen3_8b' ? 'Qwen3-8B' : 'Qwen3 14B';
+  const llmLabel = llm.profile === 'qwen35_9b' ? 'Qwen3.5-9B' : llm.profile === 'qwen3_8b' ? 'Qwen3-8B' : llm.profile === 'qwen_small' ? 'Qwen Small' : 'Qwen3 14B';
   return <div className="generationProfiling"><strong>Профилирование генерации</strong><div className="itemBankStats"><span>Всего: <strong>{formatMs(profiling.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(stages.context_generator)}</strong></span><span>Примеры/OM: <strong>{formatMs(stages.load_examples)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(stages.narrow_or_example_generation)}</strong></span><span>{llmLabel}: <strong>{formatMs(stages.local_llm_refinement)}</strong></span><span>Сохранение: <strong>{formatMs(stages.persist_items)}</strong></span>{stages.save_good_training_examples !== undefined && <span>Сохранение good: <strong>{formatMs(stages.save_good_training_examples)}</strong></span>}</div><div className="itemBankStats"><span>LLM профиль: <strong>{llm.profile || 'default'}</strong></span><span>Модель: <strong>{llm.model || '—'}</strong></span><span>Запросов: <strong>{llm.calls || 0}</strong></span><span>Средний запрос: <strong>{formatMs(llm.avg_call_ms)}</strong></span><span>Улучшено: <strong>{llm.refined_items || 0}</strong></span><span>Ошибок/отклонено: <strong>{llm.failed_items || 0}</strong></span></div>{llm.call_ms?.length > 0 && <p className="muted">Время запросов {llmLabel}: {llm.call_ms.map(formatMs).join(' · ')}</p>}</div>;
 }
 
@@ -383,6 +384,7 @@ function downloadBlob(data, filename) {
 }
 
 function successMessage(usedMode) {
+  if (usedMode === 'qwen_small_seed_good') return 'Qwen Small генерация завершена: пригодные задания добавлены в банк и сохранены как хорошие примеры.';
   if (usedMode === 'qwen8_seed_good') return 'Qwen3-8B генерация завершена: пригодные задания добавлены в банк и сохранены как хорошие примеры.';
   if (usedMode === 'qwen35_seed_good') return 'Qwen3.5-9B генерация завершена: пригодные задания добавлены в банк и сохранены как хорошие примеры.';
   if (usedMode === 'qwen_seed_good') return 'Qwen3 14B генерация завершена: пригодные задания добавлены в банк и сохранены как хорошие примеры.';
@@ -401,6 +403,7 @@ function generationModeLabel(value) {
     template: 'Базовый шаблонный режим',
     qwen_seed_good: 'Qwen3 14B обучающая генерация',
     qwen8_seed_good: 'Qwen3 8B обучающая генерация',
+    qwen_small_seed_good: 'Qwen Small обучающая генерация',
     qwen35_seed_good: 'Qwen3.5 9B обучающая генерация',
   }[value] || value || '—');
 }
@@ -420,9 +423,11 @@ function sourceKindLabel(value) {
     knowledge_context: 'context-module',
     local_llm_qwen3: 'Qwen3-refiner',
     local_llm_qwen8: 'Qwen3-8B-refiner',
+    local_llm_qwen_small: 'Qwen Small-refiner',
     local_llm_qwen35: 'Qwen3.5-refiner',
     qwen_seed_good: 'Qwen3-good',
     qwen8_seed_good: 'Qwen3-8B-good',
+    qwen_small_seed_good: 'Qwen Small-good',
     qwen35_seed_good: 'Qwen3.5-good',
     learned_example: 'по экспертному примеру',
     om_reference: 'OM/ФОС',
@@ -435,9 +440,11 @@ function sourceKindClass(value) {
   return ({
     local_llm_qwen3: 'sourceQwen',
     local_llm_qwen8: 'sourceQwen',
+    local_llm_qwen_small: 'sourceQwen',
     local_llm_qwen35: 'sourceQwen',
     qwen_seed_good: 'sourceQwen',
     qwen8_seed_good: 'sourceQwen',
+    qwen_small_seed_good: 'sourceQwen',
     qwen35_seed_good: 'sourceQwen',
     knowledge_context: 'sourceKnowledge',
     smart_builder: 'sourceSmart',

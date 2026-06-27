@@ -258,7 +258,7 @@ def validate_items(
         )
         for item in fund.competencies
     ]
-    return validate_assessment_items(items, topics, competencies)
+    return validate_assessment_items(items, topics, [competency.code for competency in competencies])
 
 
 @router.put("/{fund_id}/{item_id}", response_model=AssessmentItemRead)

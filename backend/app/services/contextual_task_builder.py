@@ -68,6 +68,14 @@ ARTIFACTS = [
     "план проверки результата",
 ]
 
+# Раньше context-builder на каждый элемент строил 12 вариантов и сравнивал
+# их со всем уже созданным банком. Для полного OM/ФОС на 145 элементов это
+# давало заметную задержку. Здесь оставлен быстрый антидубль: 4 кандидата и
+# сравнение только с последними заданиями, потому что именно там чаще всего
+# появляются близкие формулировки при последовательной генерации.
+CONTEXT_CANDIDATES_PER_ITEM = 4
+SIMILARITY_LOOKBACK = 35
+
 
 def build_contextual_task(
     *,
@@ -86,12 +94,15 @@ def build_contextual_task(
         all_topics=all_topics,
     )
     base = build_smart_task(topic=topic, assessment_type=assessment_type, item_type=item_type, index=index, difficulty=difficulty)
-    candidates = []
-    for offset in range(12):
-        candidates.append(_contextualize(base, context, assessment_type, item_type, index + offset))
     used_texts = used_texts or []
-    best = _select_least_similar(candidates, used_texts)
-    return best
+    if not used_texts:
+        return _contextualize(base, context, assessment_type, item_type, index)
+
+    candidates = [
+        _contextualize(base, context, assessment_type, item_type, index + offset)
+        for offset in range(CONTEXT_CANDIDATES_PER_ITEM)
+    ]
+    return _select_least_similar(candidates, used_texts)
 
 
 def _contextualize(
@@ -147,7 +158,7 @@ def _select_least_similar(candidates: list[SmartTaskDraft], used_texts: list[str
         return candidates[0]
     best = candidates[0]
     best_score = 10.0
-    normalized_used = [_norm(value) for value in used_texts if value]
+    normalized_used = [_norm(value) for value in used_texts[-SIMILARITY_LOOKBACK:] if value]
     for candidate in candidates:
         candidate_norm = _norm(candidate.text)
         score = max((SequenceMatcher(None, candidate_norm, value).ratio() for value in normalized_used), default=0.0)
@@ -159,7 +170,7 @@ def _select_least_similar(candidates: list[SmartTaskDraft], used_texts: list[str
 
 def is_too_similar(text: str, used_texts: list[str], threshold: float = 0.84) -> bool:
     normalized = _norm(text)
-    return any(SequenceMatcher(None, normalized, _norm(value)).ratio() >= threshold for value in used_texts if value)
+    return any(SequenceMatcher(None, normalized, _norm(value)).ratio() >= threshold for value in used_texts[-SIMILARITY_LOOKBACK:] if value)
 
 
 def _bucket(assessment_type: str, item_type: str) -> str:

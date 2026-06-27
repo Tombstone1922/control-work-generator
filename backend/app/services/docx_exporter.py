@@ -23,6 +23,12 @@ def export_generation_to_docx(generation: GenerationResponse) -> Path:
                 f"Тема: {question.topic}\n"
                 f"Тип: {question.type}; уровень сложности: {question.difficulty}"
             )
+            if question.answer:
+                document.add_paragraph(f"Ответ: {question.answer}")
+            if question.criteria:
+                document.add_paragraph("Критерии оценивания:")
+                for criterion in question.criteria:
+                    document.add_paragraph(criterion, style="List Bullet")
 
     document.add_heading("Отчет качества", level=2)
     document.add_paragraph(f"Покрытие тем: {generation.quality_report.topic_coverage}")

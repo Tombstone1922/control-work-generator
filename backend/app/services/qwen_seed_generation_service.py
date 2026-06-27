@@ -16,14 +16,15 @@ from app.schemas import (
 from app.services.assessment_item_generator import ItemGenerationContext, generate_items_for_section
 from app.services.assessment_item_postprocessor import postprocess_generated_items
 from app.services.fast_local_llm_task_refiner import refine_items_with_local_llm
-from app.services.local_llm_client import QWEN35_PROFILE, QWEN8_PROFILE
+from app.services.local_llm_client import QWEN35_PROFILE, QWEN8_PROFILE, QWEN_SMALL_PROFILE
 from app.services.role_policy import ensure_can_edit_fund_content
 
 QWEN35_GENERATION_MODE = "qwen35_seed_good"
 QWEN8_GENERATION_MODE = "qwen8_seed_good"
+QWEN_SMALL_GENERATION_MODE = "qwen_small_seed_good"
 QWEN3_GENERATION_MODE = "qwen_seed_good"
 
-LLM_SOURCE_KINDS = {"local_llm_qwen3", "local_llm_qwen35", "local_llm_qwen8"}
+LLM_SOURCE_KINDS = {"local_llm_qwen3", "local_llm_qwen35", "local_llm_qwen8", "local_llm_qwen_small"}
 
 
 def generate_qwen_seed_bank(
@@ -37,8 +38,14 @@ def generate_qwen_seed_bank(
     requested_mode = (payload.generation_mode or QWEN3_GENERATION_MODE).strip().lower()
     use_qwen35 = requested_mode == QWEN35_GENERATION_MODE
     use_qwen8 = requested_mode == QWEN8_GENERATION_MODE
+    use_qwen_small = requested_mode == QWEN_SMALL_GENERATION_MODE
 
-    if use_qwen8:
+    if use_qwen_small:
+        llm_profile = QWEN_SMALL_PROFILE
+        mode_label = "Qwen Small"
+        source_kind = "qwen_small_seed_good"
+        model_version = "qwen-small-seed-good-v0.1"
+    elif use_qwen8:
         llm_profile = QWEN8_PROFILE
         mode_label = "Qwen3-8B"
         source_kind = "qwen8_seed_good"

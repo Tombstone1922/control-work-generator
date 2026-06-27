@@ -17,7 +17,7 @@ function App() {
   });
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
   const [showAdvancedUi, setShowAdvancedUi] = useState(() => localStorage.getItem(ADVANCED_UI_KEY) === 'enabled');
-  const [activePage, setActivePage] = useState('workspace');
+  const [activePage, setActivePage] = useState('rpd');
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ full_name: '', email: '', password: '' });
   const [file, setFile] = useState(null);
@@ -134,7 +134,7 @@ function App() {
       formData.append('file', file);
       const response = await api.post('/api/programs/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setProgram(response.data);
-      setActivePage('workspace');
+      setActivePage('rpd');
       await loadHistory();
       setSuccess('РПД успешно загружена и проанализирована.');
     } catch (err) {
@@ -161,13 +161,13 @@ function App() {
     }
   }
 
-  async function openProgram(programId) {
+  async function openProgram(programId, targetPage = 'rpd') {
     setError('');
     setSuccess('');
     try {
       const response = await api.get(`/api/programs/${programId}`);
       setProgram(response.data);
-      setActivePage('workspace');
+      setActivePage(targetPage);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось открыть РПД из истории.');
     }
@@ -219,50 +219,355 @@ function App() {
         </div>
         <div className="userBox">
           <ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} />
-          <div className="userNameRow"><strong>{user.full_name}</strong><StarButton active={showAdvancedUi} onClick={() => setShowAdvancedUi((value) => !value)} /></div>
+          <div className="userNameRow">
+            <strong>{user.full_name}</strong>
+            <StarButton active={showAdvancedUi} onClick={() => setShowAdvancedUi((value) => !value)} />
+          </div>
           <span>{user.email}</span>
           <span>Роль: {roleLabel(user.role)}</span>
           <button className="secondary smallButton" onClick={() => logout()}>Выйти</button>
         </div>
       </section>
 
-      <nav className="appNav card" aria-label="Основные разделы">
-        <button className={activePage === 'workspace' ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={() => setActivePage('workspace')}>
-          <span>{user.role === 'methodist' ? 'Проверка ФОС' : 'Рабочая область'}</span>
-          <small>{user.role === 'methodist' ? 'РПД, ФОС, банк заданий' : 'РПД, ФОС, задания, экспорт'}</small>
-        </button>
-        <button className={activePage === 'administration' ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={() => setActivePage('administration')}>
-          <span>Администрирование</span>
-          <small>Набор заданий, рабочий режим, история</small>
-        </button>
+      <nav className="appNav workspaceTabs card" aria-label="Основные разделы">
+        <WorkspaceTab active={activePage === 'rpd'} onClick={() => setActivePage('rpd')} title="Анализ РПД" subtitle="Загрузка, темы, компетенции" />
+        <WorkspaceTab active={activePage === 'control'} onClick={() => setActivePage('control')} title="Контрольная" subtitle="Генерация контрольных работ" />
+        <WorkspaceTab active={activePage === 'fos'} onClick={() => setActivePage('fos')} title="ФОС" subtitle="Банк заданий, OM/ФОС, экспорт" />
+        <WorkspaceTab active={activePage === 'administration'} onClick={() => setActivePage('administration')} title="Администрирование" subtitle="Набор заданий, рабочий режим, история" />
       </nav>
 
       {error && <div className="alert">{error}</div>}
       {success && <div className="success">{success}</div>}
 
-      {activePage === 'workspace' ? (
-        <WorkspacePage user={user} file={file} setFile={setFile} program={program} isUploading={isUploading} uploadProgram={uploadProgram} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} api={api} showAdvancedUi={showAdvancedUi} setError={setError} setSuccess={setSuccess} />
-      ) : (
-        <AdministrationPage user={user} api={api} program={program} programsHistory={programsHistory} generationsHistory={generationsHistory} loadHistory={loadHistory} isHistoryLoading={isHistoryLoading} openProgram={openProgram} openProgramForDemo={openProgramForDemo} adminUsers={adminUsers} updateAdminUserRole={updateAdminUserRole} toggleAdminUser={toggleAdminUser} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={() => setShowAdvancedUi((value) => !value)} setError={setError} setSuccess={setSuccess} />
+      {activePage === 'rpd' && (
+        <RpdAnalysisPage
+          user={user}
+          file={file}
+          setFile={setFile}
+          program={program}
+          isUploading={isUploading}
+          uploadProgram={uploadProgram}
+          isReanalyzing={isReanalyzing}
+          reanalyzeProgram={reanalyzeProgram}
+        />
+      )}
+
+      {activePage === 'control' && (
+        <ControlWorkPage
+          api={api}
+          program={program}
+          canEdit={canEditWorkspace}
+          setError={setError}
+          setSuccess={setSuccess}
+          loadHistory={loadHistory}
+          goToRpd={() => setActivePage('rpd')}
+        />
+      )}
+
+      {activePage === 'fos' && (
+        <FosPage
+          api={api}
+          program={program}
+          user={user}
+          setError={setError}
+          setSuccess={setSuccess}
+          goToRpd={() => setActivePage('rpd')}
+        />
+      )}
+
+      {activePage === 'administration' && (
+        <AdministrationPage
+          user={user}
+          api={api}
+          program={program}
+          programsHistory={programsHistory}
+          generationsHistory={generationsHistory}
+          loadHistory={loadHistory}
+          isHistoryLoading={isHistoryLoading}
+          openProgram={openProgram}
+          openProgramForDemo={openProgramForDemo}
+          adminUsers={adminUsers}
+          updateAdminUserRole={updateAdminUserRole}
+          toggleAdminUser={toggleAdminUser}
+          showAdvancedUi={showAdvancedUi}
+          toggleAdvancedUi={() => setShowAdvancedUi((value) => !value)}
+          setError={setError}
+          setSuccess={setSuccess}
+        />
       )}
     </main>
   );
 }
 
-function ThemeToggle({ isDark, onToggle }) { return <button className={`themeToggle ${isDark ? 'themeToggleDark' : ''}`} type="button" onClick={onToggle} aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}><span className="themeToggleTrack"><span className="themeIcon themeSun">☀</span><span className="themeIcon themeMoon">☾</span><span className="themeToggleThumb" /></span><strong>{isDark ? 'Тёмная' : 'Светлая'}</strong></button>; }
-function StarButton({ active, onClick }) { return <button className={`starToggle ${active ? 'starToggleActive' : ''}`} type="button" onClick={onClick}>★</button>; }
+function WorkspaceTab({ active, onClick, title, subtitle }) {
+  return (
+    <button className={active ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={onClick}>
+      <span>{title}</span>
+      <small>{subtitle}</small>
+    </button>
+  );
+}
 
-function WorkspacePage({ user, file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram, api, showAdvancedUi, setError, setSuccess }) {
+function ThemeToggle({ isDark, onToggle }) {
+  return (
+    <button className={`themeToggle ${isDark ? 'themeToggleDark' : ''}`} type="button" onClick={onToggle} aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}>
+      <span className="themeToggleTrack"><span className="themeIcon themeSun">☀</span><span className="themeIcon themeMoon">☾</span><span className="themeToggleThumb" /></span>
+      <strong>{isDark ? 'Тёмная' : 'Светлая'}</strong>
+    </button>
+  );
+}
+
+function StarButton({ active, onClick }) {
+  return <button className={`starToggle ${active ? 'starToggleActive' : ''}`} type="button" onClick={onClick} title={active ? 'Скрыть служебные панели' : 'Показать служебные панели'}>★</button>;
+}
+
+function RpdAnalysisPage({ user, file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram }) {
   const canEdit = user.role === 'teacher' || user.role === 'admin';
-  return <div className="workspacePage"><section className="pageIntro card"><div><p className="eyebrow">Рабочая область</p><h2>{canEdit ? 'РПД → структура ФОС → банк заданий' : 'Проверка РПД, ФОС и банка заданий'}</h2><p className="muted">Основной сценарий работы с РПД и ФОС. Для демонстрации на защите используйте раздел “Администрирование”.</p></div><div className="stepPills"><span>1. РПД</span><span>2. Анализ</span><span>3. ФОС</span><span>4. Экспорт</span></div></section><section className="workspaceGrid">{canEdit ? <form className="card uploadCard" onSubmit={uploadProgram}><p className="eyebrow">Загрузка</p><h2>Рабочая программа дисциплины</h2><p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p><input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>{file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}</form> : <section className="card uploadCard"><p className="eyebrow">Проверка</p><h2>Материалы преподавателей</h2><p className="muted">Методист открывает РПД из истории и проверяет материалы без редактирования.</p></section>}<section className="card currentDocCard"><p className="eyebrow">Текущий документ</p><h2>{program?.filename || 'РПД пока не выбрана'}</h2>{program ? <div className="docStats"><Metric value={program.topics?.length || 0} label="тем" /><Metric value={program.competencies?.length || 0} label="компетенций" /><Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество" /></div> : <p className="muted">Загрузите РПД или откройте документ из администрирования.</p>}</section></section>{program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}{program && showAdvancedUi && <AssessmentFundPanel api={api} program={program} user={user} setError={setError} setSuccess={setSuccess} />}</div>;
+  return (
+    <div className="workspacePage">
+      <section className="pageIntro card">
+        <div>
+          <p className="eyebrow">Анализ РПД</p>
+          <h2>РПД → структура дисциплины</h2>
+          <p className="muted">Здесь остается только загрузка рабочей программы дисциплины и первичный анализ: темы, компетенции, результаты обучения и качество распознавания.</p>
+        </div>
+        <div className="stepPills"><span>1. РПД</span><span>2. Анализ</span><span>3. Готово</span></div>
+      </section>
+
+      <section className="workspaceGrid">
+        {canEdit ? (
+          <form className="card uploadCard" onSubmit={uploadProgram}>
+            <p className="eyebrow">Загрузка</p>
+            <h2>Рабочая программа дисциплины</h2>
+            <p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p>
+            <input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            <button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>
+            {file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}
+          </form>
+        ) : (
+          <section className="card uploadCard"><p className="eyebrow">Проверка</p><h2>Материалы преподавателей</h2><p className="muted">Методист открывает РПД из истории и проверяет материалы без редактирования.</p></section>
+        )}
+
+        <CurrentDocumentCard program={program} />
+      </section>
+
+      {program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}
+    </div>
+  );
+}
+
+function CurrentDocumentCard({ program }) {
+  return (
+    <section className="card currentDocCard">
+      <p className="eyebrow">Текущий документ</p>
+      <h2>{program?.filename || 'РПД пока не выбрана'}</h2>
+      {program ? (
+        <div className="docStats">
+          <Metric value={program.topics?.length || 0} label="тем" />
+          <Metric value={program.competencies?.length || 0} label="компетенций" />
+          <Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество" />
+        </div>
+      ) : <p className="muted">Загрузите РПД во вкладке «Анализ РПД» или откройте документ из администрирования.</p>}
+    </section>
+  );
+}
+
+function ControlWorkPage({ api, program, canEdit, setError, setSuccess, loadHistory, goToRpd }) {
+  const [variantsCount, setVariantsCount] = useState(2);
+  const [questionsPerVariant, setQuestionsPerVariant] = useState(5);
+  const [difficulty, setDifficulty] = useState('medium');
+  const [questionTypes, setQuestionTypes] = useState(['open', 'practice']);
+  const [generation, setGeneration] = useState(null);
+  const [isGenerating, setGenerating] = useState(false);
+  const [isExporting, setExporting] = useState(false);
+
+  function toggleQuestionType(type) {
+    setQuestionTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
+  }
+
+  async function runControlGeneration(event) {
+    event.preventDefault();
+    if (!program?.program_id) return setError('Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД».');
+    setGenerating(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await api.post('/api/generation/run', {
+        program_id: program.program_id,
+        variants_count: Number(variantsCount),
+        questions_per_variant: Number(questionsPerVariant),
+        difficulty,
+        question_types: questionTypes.length ? questionTypes : ['open'],
+      });
+      setGeneration(response.data);
+      await loadHistory();
+      setSuccess('Контрольная работа сформирована.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось сформировать контрольную работу.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function downloadControlWork() {
+    if (!generation?.session_id) return;
+    setExporting(true);
+    setError('');
+    try {
+      const response = await api.get(`/api/export/docx/${generation.session_id}`, { responseType: 'blob' });
+      downloadBlob(response.data, `control_work_${generation.session_id.slice(0, 8)}.docx`);
+      setSuccess('Контрольная работа скачана в DOCX.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось скачать контрольную работу.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  if (!program) {
+    return <EmptyState title="Контрольная работа" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД»." actionText="Перейти к анализу РПД" onAction={goToRpd} />;
+  }
+
+  return (
+    <div className="controlWorkPage">
+      <section className="pageIntro card">
+        <div>
+          <p className="eyebrow">Контрольная</p>
+          <h2>Генерация контрольных работ</h2>
+          <p className="muted">Отдельный сценарий для быстрого формирования вариантов контрольной работы по темам загруженной РПД.</p>
+        </div>
+        <div className="stepPills"><span>{program.topics?.length || 0} тем</span><span>{program.competencies?.length || 0} компетенции</span></div>
+      </section>
+
+      <section className="card workflow">
+        <form onSubmit={runControlGeneration}>
+          <div className="miniGrid">
+            <label>Вариантов<input type="number" min="1" max="20" value={variantsCount} onChange={(event) => setVariantsCount(event.target.value)} /></label>
+            <label>Заданий в варианте<input type="number" min="1" max="50" value={questionsPerVariant} onChange={(event) => setQuestionsPerVariant(event.target.value)} /></label>
+            <label>Сложность<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label>
+          </div>
+          <div className="questionTypeRow">
+            <label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('open')} onChange={() => toggleQuestionType('open')} />Открытые вопросы</label>
+            <label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('test')} onChange={() => toggleQuestionType('test')} />Тестовые вопросы</label>
+            <label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('practice')} onChange={() => toggleQuestionType('practice')} />Практические задания</label>
+          </div>
+          <button className="primary" disabled={isGenerating || !canEdit}>{isGenerating ? 'Формируем контрольную...' : 'Сформировать контрольную'}</button>
+        </form>
+      </section>
+
+      {generation ? (
+        <section className="card">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">Результат генерации</p>
+              <h2>Контрольная работа</h2>
+              <p className="muted">Всего заданий: {generation.quality_report?.total_questions || 0}; дубли: {generation.quality_report?.duplicate_rate || 0}%.</p>
+            </div>
+            <button className="download" type="button" onClick={downloadControlWork} disabled={isExporting}>{isExporting ? 'Формируем DOCX...' : 'Скачать контрольную'}</button>
+          </div>
+          <div className="variants">
+            {generation.variants.map((variant) => <ControlVariantCard key={variant.variant_number} variant={variant} />)}
+          </div>
+        </section>
+      ) : (
+        <section className="card"><p className="muted">Контрольная еще не сформирована. Настройте параметры и нажмите кнопку генерации.</p></section>
+      )}
+    </div>
+  );
+}
+
+function ControlVariantCard({ variant }) {
+  return (
+    <article className="variant">
+      <h3>Вариант {variant.variant_number}</h3>
+      {variant.questions.map((question, index) => (
+        <div className="question" key={question.id}>
+          <strong>{index + 1}. {question.topic}</strong>
+          <p>{question.text}</p>
+          <small>{questionTypeLabel(question.type)} · {difficultyLabel(question.difficulty)}</small>
+        </div>
+      ))}
+    </article>
+  );
+}
+
+function FosPage({ api, program, user, setError, setSuccess, goToRpd }) {
+  if (!program) {
+    return <EmptyState title="ФОС" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД». После этого здесь появится структура ФОС и банк заданий." actionText="Перейти к анализу РПД" onAction={goToRpd} />;
+  }
+  return (
+    <div className="fosPage">
+      <section className="pageIntro card">
+        <div>
+          <p className="eyebrow">ФОС</p>
+          <h2>Формирование ФОС и банка заданий</h2>
+          <p className="muted">Здесь находится вся генерация ФОС: структура, разделы, интеллектуальный генератор 2.0, банк заданий, проверка и экспорт.</p>
+        </div>
+        <div className="stepPills"><span>1. Структура</span><span>2. Генерация</span><span>3. Банк</span><span>4. Экспорт</span></div>
+      </section>
+      <CurrentDocumentCard program={program} />
+      <AssessmentFundPanel api={api} program={program} user={user} setError={setError} setSuccess={setSuccess} />
+    </div>
+  );
 }
 
 function AdministrationPage({ user, api, program, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openProgramForDemo, adminUsers, updateAdminUserRole, toggleAdminUser, showAdvancedUi, toggleAdvancedUi, setError, setSuccess }) {
-  return <div className="adminPage"><section className="pageIntro card adminIntro"><div><p className="eyebrow">Администрирование защиты</p><h2>Набор заданий и рабочий режим</h2><p className="muted">Для защиты ВКР заранее набиваем банк заданий под выбранную РПД, а затем показываем рабочий режим, где задания открываются практически сразу.</p></div></section>{showAdvancedUi && <section className="adminDashboard"><DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} /><section className="card systemCard"><p className="eyebrow">Текущая РПД</p><h2>{program?.filename || 'РПД не выбрана'}</h2><p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p></section></section>}<section className="card historyCard"><div className="sectionHeader"><div><h2>История работы</h2><p className="muted">Ранее загруженные РПД и сгенерированные материалы.</p></div><button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button></div><div className="historyGrid"><HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgramForDemo(item.program_id)} /><HistoryList title="Генерации" items={generationsHistory} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id)} /></div></section>{user.role === 'admin' && <AdminPanel users={adminUsers} currentUser={user} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}</div>;
+  return (
+    <div className="adminPage">
+      <section className="pageIntro card adminIntro">
+        <div>
+          <p className="eyebrow">Администрирование защиты</p>
+          <h2>Набор заданий и рабочий режим</h2>
+          <p className="muted">Для защиты ВКР заранее набиваем банк заданий под выбранную РПД, а затем показываем рабочий режим, где задания открываются практически сразу.</p>
+        </div>
+      </section>
+
+      {showAdvancedUi && <section className="adminDashboard">
+        <DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} />
+        <section className="card systemCard">
+          <p className="eyebrow">Текущая РПД</p>
+          <h2>{program?.filename || 'РПД не выбрана'}</h2>
+          <p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p>
+        </section>
+      </section>}
+
+      <section className="card historyCard">
+        <div className="sectionHeader">
+          <div><h2>История работы</h2><p className="muted">Ранее загруженные РПД и сгенерированные материалы.</p></div>
+          <button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button>
+        </div>
+        <div className="historyGrid">
+          <HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgram(item.program_id, 'rpd')} />
+          <HistoryList title="Генерации" items={generationsHistory} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id, 'control')} />
+        </div>
+      </section>
+
+      {user.role === 'admin' && <AdminPanel users={adminUsers} currentUser={user} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}
+    </div>
+  );
 }
 
-function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) { return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>; }
-function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) { const report = program.analysis_report || {}; const diagnostics = report.diagnostics || {}; return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div>{canEdit && <button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button>}</div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div></section>; }
+function EmptyState({ title, text, actionText, onAction }) {
+  return (
+    <section className="card emptyState">
+      <p className="eyebrow">{title}</p>
+      <h2>РПД не выбрана</h2>
+      <p className="muted">{text}</p>
+      {onAction && <button className="primary" type="button" onClick={onAction}>{actionText}</button>}
+    </section>
+  );
+}
+
+function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) {
+  return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>;
+}
+
+function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) {
+  const report = program.analysis_report || {};
+  const diagnostics = report.diagnostics || {};
+  return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div>{canEdit && <button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button>}</div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div></section>;
+}
+
 function Metric({ value, label }) { return <div className="metric"><strong>{value}</strong><span>{label}</span></div>; }
 function List({ title, items }) { return <div><h3>{title}</h3>{items.length ? <ul className="compactList">{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">Не найдено</p>}</div>; }
 function HistoryList({ title, items, getKey, renderItem, onOpen }) { return <div className="historyColumn"><h3>{title}</h3>{items.length ? <div className="historyItems">{items.slice(0, 8).map((item) => <button className="historyItem" key={getKey(item)} onClick={() => onOpen(item)}>{renderItem(item)}</button>)}</div> : <p className="muted">Пока пусто</p>}</div>; }
@@ -270,4 +575,8 @@ function AdminPanel({ users, currentUser, showAdvancedUi, toggleAdvancedUi, upda
 function roleLabel(role) { return ({ teacher: 'преподаватель', methodist: 'методист', admin: 'администратор' }[role] || role); }
 function statusLabel(status) { return ({ generated: 'Сформировано', in_review: 'На проверке', revision_required: 'Требует доработки', approved: 'Утверждено' }[status] || status); }
 function roleChangeMessage(role) { return ({ teacher: 'Права пользователя снижены до преподавателя.', methodist: 'Пользователь назначен методистом.', admin: 'Пользователь повышен до администратора.' }[role] || 'Роль пользователя обновлена.'); }
+function questionTypeLabel(type) { return ({ open: 'открытый вопрос', test: 'тест', practice: 'практика' }[type] || type); }
+function difficultyLabel(value) { return ({ easy: 'базовая', medium: 'средняя', hard: 'повышенная' }[value] || value); }
+function downloadBlob(data, filename) { const url = window.URL.createObjectURL(new Blob([data])); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url); }
+
 export default App;

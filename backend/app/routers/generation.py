@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import models
@@ -16,12 +17,7 @@ from app.repositories import (
     update_generation_status,
     update_generation_variants,
 )
-from app.schemas import (
-    GenerationRequest,
-    GenerationResponse,
-    GenerationStatusUpdateRequest,
-    GenerationUpdateRequest,
-)
+from app.schemas import ControlWorkVariant, GenerationRequest, GenerationResponse
 from app.security import get_current_user
 from app.services.question_generator import generate_question, generate_variants
 from app.services.quality_checker import build_quality_report
@@ -34,6 +30,15 @@ from app.services.role_policy import (
 
 router = APIRouter(prefix="/api/generation", tags=["generation"])
 ALLOWED_STATUSES = {"generated", "in_review", "revision_required", "approved"}
+
+
+class GenerationUpdateRequest(BaseModel):
+    variants: list[ControlWorkVariant]
+
+
+class GenerationStatusUpdateRequest(BaseModel):
+    status: str
+    review_comment: str = ""
 
 
 @router.post("/run", response_model=GenerationResponse)

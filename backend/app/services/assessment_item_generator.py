@@ -84,6 +84,8 @@ def _item_type_for_assessment(assessment_type: str) -> str:
         "practice": "practice",
         "exam_questions": "theoretical_open",
         "exam_practice": "practice",
+        "credit": "theoretical_open",
+        "credit_practice": "practice",
         "diagnostic": "diagnostic",
         "control_work": "control_work",
         "coursework": "coursework_topic",
@@ -91,5 +93,4 @@ def _item_type_for_assessment(assessment_type: str) -> str:
         "laboratory": "laboratory",
         "test_bank": "single_choice",
         "report_topics": "report_topic",
-        "credit": "theoretical_open",
     }.get(assessment_type, "open")

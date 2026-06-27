@@ -19,6 +19,8 @@ QWEN35_PROFILE = "qwen35_9b"
 QWEN35_MODEL_NAME = "qwen35-9b-gemini-reasoning-distill-q4_k_m"
 QWEN8_PROFILE = "qwen3_8b"
 QWEN8_MODEL_NAME = "qwen3-8b-q4_k_m"
+QWEN_SMALL_PROFILE = "qwen_small"
+QWEN_SMALL_MODEL_NAME = "qwen-small-q4_k_m"
 
 
 @dataclass
@@ -35,6 +37,17 @@ class LocalLLMSettings:
 def get_local_llm_settings(profile: str | None = None) -> LocalLLMSettings:
     profile_key = _normalize_profile(profile)
     default_enabled = _env_bool("LOCAL_LLM_ENABLED", False)
+
+    if profile_key == QWEN_SMALL_PROFILE:
+        return LocalLLMSettings(
+            enabled=_env_bool("LOCAL_LLM_QWEN_SMALL_ENABLED", default_enabled),
+            base_url=os.getenv("LOCAL_LLM_QWEN_SMALL_BASE_URL", "http://127.0.0.1:8084/v1").rstrip("/"),
+            model=os.getenv("LOCAL_LLM_QWEN_SMALL_MODEL", QWEN_SMALL_MODEL_NAME),
+            timeout_seconds=int(os.getenv("LOCAL_LLM_QWEN_SMALL_TIMEOUT_SECONDS", os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "90"))),
+            temperature=float(os.getenv("LOCAL_LLM_QWEN_SMALL_TEMPERATURE", os.getenv("LOCAL_LLM_TEMPERATURE", "0.1"))),
+            max_tokens=int(os.getenv("LOCAL_LLM_QWEN_SMALL_MAX_TOKENS", os.getenv("LOCAL_LLM_MAX_TOKENS", "700"))),
+            profile=QWEN_SMALL_PROFILE,
+        )
 
     if profile_key == QWEN8_PROFILE:
         return LocalLLMSettings(
@@ -123,6 +136,8 @@ class LocalLLMClient:
 
 def _normalize_profile(profile: str | None) -> str:
     value = (profile or "default").strip().lower().replace("-", "_")
+    if value in {"qwen_small", "qwen3b", "qwen_3b", "qwen25_3b", "qwen2_5_3b", "qwen4b", "qwen3_4b", "small", "small_fast"}:
+        return QWEN_SMALL_PROFILE
     if value in {"qwen8", "qwen3_8b", "qwen3.8b", "qwen3_8", "qwen_8b", "fast", "qwen8_fast"}:
         return QWEN8_PROFILE
     if value in {"qwen35", "qwen3_5", "qwen3.5", "qwen35_9b", "experimental", "qwen35_experimental"}:

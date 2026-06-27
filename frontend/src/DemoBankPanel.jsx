@@ -18,9 +18,11 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
     try {
       const response = await api.post(`/api/demo-bank/${program.program_id}/seed`);
       setSummary(response.data);
-      const qwen = response.data.llm?.used ? ` Qwen улучшил ${response.data.llm.refined} заданий за ${response.data.llm.seconds} с.` : ' Qwen не использовался: проверьте запуск локальной модели, если нужны улучшенные формулировки.';
+      const pipeline = response.data.llm?.used
+        ? ` Общая система подготовила банк: context-builder + контекст РПД + Qwen-refiner; улучшено ${response.data.llm.refined} заданий за ${response.data.llm.seconds} с.`
+        : ' Банк подготовлен context-builder по контексту РПД; Qwen не использовался, проверьте запуск локальной модели.';
       const persistent = response.data.persistent ? ' Банк сохранен на постоянку в локальный JSON-файл.' : '';
-      setSuccess(`Банк заданий подготовлен: ${response.data.total_items} заданий.${qwen}${persistent}`);
+      setSuccess(`Банк заданий подготовлен: ${response.data.total_items} заданий.${pipeline}${persistent}`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось подготовить банк заданий.');
     } finally {
@@ -56,8 +58,8 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
   return (
     <section className="card quickGenerationCard">
       <p className="eyebrow">Демонстрационный режим защиты</p>
-      <h2>Qwen-банк заданий по РПД</h2>
-      <p className="muted">Логика такая: заранее набиваем качественный банк через Qwen, сохраняем его на постоянку, а на защите загружаем РПД с тем же названием и в рабочем режиме мгновенно подставляем готовые задания.</p>
+      <h2>Подготовленный банк общей системы</h2>
+      <p className="muted">Система берет темы, компетенции и контекст РПД, затем context-builder делает каркас задания и ответа, а Qwen улучшает формулировку и эталонный ответ.</p>
 
       <div className="authTabs demoModeTabs">
         <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
@@ -71,8 +73,8 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       {mode === 'seed' ? (
         <div className="demoModeBlock">
           <h3>Набор заданий</h3>
-          <p className="muted">Этот режим запускается заранее. Он создает базу по темам и компетенциям РПД, Qwen улучшает формулировки, а итоговый банк сохраняется и в базу, и в постоянный JSON-файл.</p>
-          <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Qwen набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
+          <p className="muted">Этот режим запускается заранее. Общая система строит вопросы и ответы по РПД: устные вопросы, практику, тесты с A-D, эталонные ответы и критерии.</p>
+          <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Общая система набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
         </div>
       ) : (
         <div className="demoModeBlock">
@@ -96,8 +98,10 @@ function PreparedBankSummary({ summary }) {
         <span>План: <strong>{summary.planned_items}</strong></span>
         <span>Версия: <strong>{summary.model_version}</strong></span>
         <span>Файл: <strong>{summary.filename}</strong></span>
-        {summary.llm && <span>Qwen: <strong>{summary.llm.used ? `${summary.llm.refined} улучшено` : 'не использован'}</strong></span>}
-        {summary.llm?.seconds > 0 && <span>Время Qwen: <strong>{summary.llm.seconds} с</strong></span>}
+        {summary.llm && <span>Pipeline: <strong>{summary.llm.pipeline || (summary.llm.used ? 'context+qwen' : 'context-builder')}</strong></span>}
+        {summary.llm && <span>Qwen-refiner: <strong>{summary.llm.used ? `${summary.llm.refined} улучшено` : 'не использован'}</strong></span>}
+        {summary.llm?.rejected > 0 && <span>Отклонено: <strong>{summary.llm.rejected}</strong></span>}
+        {summary.llm?.seconds > 0 && <span>Время: <strong>{summary.llm.seconds} с</strong></span>}
         <span>Постоянное хранение: <strong>{summary.persistent ? 'да' : 'нет'}</strong></span>
         {summary.restored_from_file && <span>Источник: <strong>JSON-файл</strong></span>}
         {summary.matched_by_name && <span>Мэтч: <strong>по названию РПД</strong></span>}
@@ -117,7 +121,7 @@ function PreparedBankSummary({ summary }) {
           <h3>Примеры заданий в рабочем режиме</h3>
           {summary.sample_items.map((item, index) => (
             <article className="itemBankListItem demoBankItem" key={item.id}>
-              <div className="itemCardHeader"><strong>{index + 1}. {item.topic}</strong><span className="sourceBadge sourceLearned">готовый Qwen-банк</span></div>
+              <div className="itemCardHeader"><strong>{index + 1}. {item.topic}</strong><span className="sourceBadge sourceLearned">готовый банк системы</span></div>
               <p>{item.text}</p>
               {item.answer && <small><strong>Ответ:</strong> {item.answer}</small>}
               <small>{item.assessment_type} · {item.difficulty} · {item.competency_code || 'без компетенции'}</small>

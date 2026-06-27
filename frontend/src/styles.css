@@ -68,6 +68,34 @@ h3 { font-size: 16px; margin-bottom: 10px; }
 .systemStatusBox { background: #eef4ff; color: #253d7a; }
 .systemStatusBox span { color: #53617e; }
 
+.userNameRow, .adminNameLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.starToggle {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f4c542;
+  border-radius: 8px;
+  background: #fff8dc;
+  color: #f2b600;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.starToggleActive {
+  background: #ffdf5d;
+  color: #7a560d;
+  border-color: #e7b900;
+}
+
 .appNav {
   position: sticky;
   top: 12px;

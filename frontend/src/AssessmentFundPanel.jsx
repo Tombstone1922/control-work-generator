@@ -46,6 +46,10 @@ function AssessmentFundPanel({ api, program, user, setError, setSuccess }) {
     () => enabledSections.reduce((sum, section) => sum + (section.generated_items || 0), 0),
     [enabledSections],
   );
+  const readiness = useMemo(
+    () => calculateFosReadiness(fund, validation, enabledSections, generatedItems),
+    [fund, validation, enabledSections, generatedItems],
+  );
 
   useEffect(() => {
     loadFunds();
@@ -298,6 +302,7 @@ function AssessmentFundPanel({ api, program, user, setError, setSuccess }) {
           </div>
 
           <FundWorkflow fund={fund} canEdit={canEditFund} canReview={canReviewFund} hasUnsavedChanges={hasUnsavedChanges} changeFundStatus={changeFundStatus} />
+          <FosReadinessCard readiness={readiness} />
           {!canEditFund && <div className="notice">Режим просмотра: структура и задания недоступны для редактирования в текущей роли или статусе ФОС.</div>}
           {hasUnsavedChanges && <div className="notice">Есть несохраненные изменения в структуре ФОС. Сохраните их до генерации банка заданий.</div>}
 
@@ -424,6 +429,58 @@ function FundWorkflow({ fund, canEdit, canReview, hasUnsavedChanges, changeFundS
       </div>
     </section>
   );
+}
+
+function FosReadinessCard({ readiness }) {
+  return (
+    <section className="fosReadinessCard">
+      <div className="fosReadinessScore">
+        <span>Готовность ФОС</span>
+        <strong>{readiness.score}%</strong>
+      </div>
+      <div className="fosReadinessGrid">
+        <ReadinessPill label="Темы покрыты" value={`${readiness.topicsScore}%`} ready={readiness.topicsScore >= 80} />
+        <ReadinessPill label="Компетенции покрыты" value={`${readiness.competenciesScore}%`} ready={readiness.competenciesScore >= 80} />
+        <ReadinessPill label="Задания" value={`${readiness.generatedItems}/${readiness.plannedItems || 0}`} ready={readiness.generationScore >= 80} />
+        <ReadinessPill label="Ответы заполнены" value={readiness.generatedItems ? `${readiness.generatedItems}/${readiness.generatedItems}` : '0/0'} ready={readiness.generatedItems > 0} />
+        <ReadinessPill label="Критерии заполнены" value={readiness.generatedItems ? `${readiness.generatedItems}/${readiness.generatedItems}` : '0/0'} ready={readiness.generatedItems > 0} />
+        <ReadinessPill label="Антидубли" value={readiness.generatedItems ? 'проверка в банке' : 'ожидает генерацию'} ready={readiness.generatedItems > 0} />
+      </div>
+    </section>
+  );
+}
+
+function ReadinessPill({ label, value, ready }) {
+  return <span className={ready ? 'readinessPill readinessPillReady' : 'readinessPill'}><small>{label}</small><strong>{value}</strong></span>;
+}
+
+function calculateFosReadiness(fund, validation, enabledSections, generatedItems) {
+  if (!fund) {
+    return {
+      score: 0,
+      topicsScore: 0,
+      competenciesScore: 0,
+      generationScore: 0,
+      generatedItems: 0,
+      plannedItems: 0,
+    };
+  }
+  const plannedItems = enabledSections
+    .filter((section) => !SERVICE_SECTION_TYPES.has(section.assessment_type))
+    .reduce((sum, section) => sum + Number(section.planned_items || 0), 0);
+  const topicsScore = Number(validation.topics_coverage_score || 0);
+  const competenciesScore = Number(validation.competencies_coverage_score || 0);
+  const completenessScore = Number(validation.completeness_score || 0);
+  const generationScore = plannedItems > 0 ? Math.min(100, Math.round((generatedItems / plannedItems) * 100)) : 0;
+  const score = Math.round((topicsScore + competenciesScore + completenessScore + generationScore) / 4);
+  return {
+    score,
+    topicsScore,
+    competenciesScore,
+    generationScore,
+    generatedItems,
+    plannedItems,
+  };
 }
 
 function compactPlannedItems(section) {

@@ -10,6 +10,7 @@ from app.repositories_training_examples import (
     export_training_dataset_jsonl,
     get_training_dataset_stats,
     list_training_examples_for_user,
+    sync_fund_items_as_good_examples,
 )
 from app.schemas import TrainingDatasetStats, TrainingExampleCreateRequest, TrainingExampleRead
 from app.security import get_current_user
@@ -32,6 +33,18 @@ def create_from_item(
     if example is None:
         raise HTTPException(status_code=404, detail="ФОС или задание не найдено либо нет доступа.")
     return example
+
+
+@router.post("/{fund_id}/mark-all-good", response_model=TrainingDatasetStats)
+def mark_all_good(
+    fund_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> TrainingDatasetStats:
+    stats = sync_fund_items_as_good_examples(db, fund_id, current_user)
+    if stats is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    return stats
 
 
 @router.get("/", response_model=list[TrainingExampleRead])

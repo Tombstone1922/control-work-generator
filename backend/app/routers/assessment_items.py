@@ -1,5 +1,8 @@
 import json
+import re
 import time
+from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -37,6 +40,10 @@ from app.services.role_policy import ensure_can_edit_fund_content
 
 router = APIRouter(prefix="/api/assessment-items", tags=["assessment-items"])
 
+PREPARED_BANK_V3_MODE = "prepared_bank_v3"
+PREPARED_BANK_V3_VERSION = "prepared-bank-generator-v3.0-json"
+PREPARED_BANK_DIR = Path(__file__).resolve().parents[2] / "storage" / "prepared_banks"
+
 
 @router.get("/{fund_id}", response_model=list[AssessmentItemRead])
 def list_items(
@@ -58,7 +65,11 @@ def generate_items(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemsGenerateResponse:
-    if payload.generation_mode.strip().lower() == INTELLIGENT_V2_MODE:
+    mode = payload.generation_mode.strip().lower()
+    if mode == PREPARED_BANK_V3_MODE:
+        return generate_from_prepared_json_bank(fund_id, payload, db, current_user)
+
+    if mode == INTELLIGENT_V2_MODE:
         try:
             response = generate_intelligent_v2_bank(db=db, fund_id=fund_id, payload=payload, current_user=current_user)
         except ValueError as exc:
@@ -153,7 +164,6 @@ def generate_items(
     profiling["stages_ms"]["load_examples"] = _elapsed_ms(stage_started)
 
     stage_started = time.perf_counter()
-    mode = payload.generation_mode.strip().lower()
     try:
         if mode in {"narrow_llm", "hybrid"}:
             generation_result = apply_narrow_llm_generation(
@@ -231,6 +241,112 @@ def generate_items(
         warnings=warnings,
         profiling=profiling,
     )
+
+
+def generate_from_prepared_json_bank(
+    fund_id: str,
+    payload: AssessmentItemsGenerateRequest,
+    db: Session,
+    current_user: models.User,
+) -> AssessmentItemsGenerateResponse:
+    total_started = time.perf_counter()
+    fund = get_fund_entity_for_user(db, fund_id, current_user)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+    ensure_can_edit_fund_content(current_user, fund)
+
+    bank_payload, bank_path = _load_prepared_bank_payload(fund.program.filename)
+    if bank_payload is None:
+        raise HTTPException(status_code=404, detail="Подготовленный JSON-банк для этой РПД не найден. Сначала набейте банк в администрировании.")
+
+    raw_items = bank_payload.get("items") if isinstance(bank_payload, dict) else []
+    if not isinstance(raw_items, list) or not raw_items:
+        raise HTTPException(status_code=422, detail="JSON-банк найден, но в нем нет заданий.")
+
+    selected_section = payload.section_code or ""
+    restored: list[AssessmentItemRead] = []
+    target_codes: list[str] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        section_code = str(raw.get("section_code") or "")
+        if selected_section and section_code != selected_section:
+            continue
+        if section_code and section_code not in target_codes:
+            target_codes.append(section_code)
+        data = {key: raw.get(key) for key in AssessmentItemRead.model_fields.keys()}
+        data["id"] = str(uuid4())
+        data["fund_id"] = fund.id
+        data["source_kind"] = "prepared_bank_v3"
+        data["source_context"] = f"Генератор 3.0: готовое задание восстановлено из постоянного JSON-банка по названию РПД. Файл банка: {bank_path.name}."
+        data["status"] = data.get("status") or "approved"
+        restored.append(AssessmentItemRead(**data))
+
+    if not restored:
+        raise HTTPException(status_code=404, detail="В подготовленном JSON-банке нет заданий для выбранного раздела ФОС.")
+
+    persisted = replace_items_for_sections(db, fund, target_codes, restored, payload.replace_existing)
+    profiling = {
+        "total_ms": _elapsed_ms(total_started),
+        "stages_ms": {
+            "load_prepared_json_bank": _elapsed_ms(total_started),
+            "persist_items": 0,
+        },
+        "prepared_bank_v3": {
+            "source_file": str(bank_path),
+            "source_filename": bank_payload.get("source_filename", fund.program.filename),
+            "matched_by_name": True,
+            "cooldown_is_frontend": True,
+            "restored_items": len(restored),
+        },
+        "items_persisted": len(persisted),
+    }
+
+    return AssessmentItemsGenerateResponse(
+        items=persisted,
+        requested_mode=PREPARED_BANK_V3_MODE,
+        used_mode=PREPARED_BANK_V3_MODE,
+        learned_generated_items=0,
+        narrow_llm_generated_items=0,
+        template_generated_items=len(restored),
+        model_version=PREPARED_BANK_V3_VERSION,
+        warnings=[f"Генератор 3.0 загрузил задания из постоянного JSON-банка: {bank_path.name}."],
+        profiling=profiling,
+    )
+
+
+def _load_prepared_bank_payload(filename: str) -> tuple[dict | None, Path]:
+    PREPARED_BANK_DIR.mkdir(parents=True, exist_ok=True)
+    key = _name_key(filename)
+    direct_path = PREPARED_BANK_DIR / f"{key}.json"
+    if direct_path.exists():
+        data = _read_json(direct_path)
+        if data:
+            return data, direct_path
+
+    for path in sorted(PREPARED_BANK_DIR.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        data = _read_json(path)
+        if not data:
+            continue
+        bank_key = _name_key(data.get("source_filename") or data.get("bank_key") or path.stem)
+        if key and (bank_key == key or key in bank_key or bank_key in key):
+            return data, path
+    return None, direct_path
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _name_key(value: str) -> str:
+    value = (value or "").lower().replace("ё", "е")
+    value = re.sub(r"\.(docx|pdf|txt)$", "", value)
+    value = re.sub(r"[^a-zа-я0-9]+", "", value)
+    return value
 
 
 @router.post("/{fund_id}/validate", response_model=AssessmentItemsValidation)

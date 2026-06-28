@@ -80,6 +80,10 @@
   font-size: 16px;
 }
 
+.itemBank > .sectionHeader .actionGroup > .download {
+  display: none;
+}
+
 body.darkTheme .uploadCard .fileInput {
   border-color: rgba(135, 155, 235, 0.42);
   background: linear-gradient(135deg, rgba(25, 33, 57, 0.94), rgba(31, 42, 74, 0.94));

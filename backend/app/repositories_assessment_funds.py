@@ -31,6 +31,10 @@ def _load_dict(value: str) -> dict:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _dt(value) -> str:
+    return value.isoformat() if value else ""
+
+
 def create_assessment_fund(
     db: Session,
     program: models.Program,
@@ -73,6 +77,7 @@ def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
     return AssessmentFundResponse(
         fund_id=entity.id,
         program_id=entity.program_id,
+        program_filename=entity.program.filename if entity.program else "",
         title=entity.title,
         discipline_name=entity.discipline_name,
         status=entity.status,
@@ -80,6 +85,8 @@ def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
         sections=[AssessmentFundSection(**item) for item in _load_list(entity.sections_json)],
         competencies=competencies,
         validation=AssessmentFundValidation(**_load_dict(entity.validation_json)),
+        created_at=_dt(entity.created_at),
+        updated_at=_dt(entity.updated_at),
     )
 
 
@@ -97,7 +104,10 @@ def list_assessment_funds_for_user(db: Session, user: models.User) -> list[Asses
     query = (
         select(models.AssessmentFund)
         .join(models.Program, models.AssessmentFund.program_id == models.Program.id)
-        .options(selectinload(models.AssessmentFund.competencies))
+        .options(
+            selectinload(models.AssessmentFund.competencies),
+            selectinload(models.AssessmentFund.program),
+        )
         .order_by(models.AssessmentFund.updated_at.desc())
     )
     if user.role not in {"admin", "methodist"}:

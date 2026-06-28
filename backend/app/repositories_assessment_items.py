@@ -78,6 +78,9 @@ def replace_items_for_sections(
     items: list[AssessmentItemRead],
     replace_existing: bool,
 ) -> list[AssessmentItemRead]:
+    items = _limit_prepared_bank_items_to_fos_plan(fund, items)
+    section_codes = list(dict.fromkeys([*section_codes, *[item.section_code for item in items if item.section_code]]))
+
     if replace_existing and section_codes:
         db.execute(
             delete(models.AssessmentItem).where(
@@ -112,6 +115,35 @@ def replace_items_for_sections(
     _refresh_section_item_counts(db, fund)
     db.commit()
     return list_items(db, fund.id)
+
+
+def _limit_prepared_bank_items_to_fos_plan(
+    fund: models.AssessmentFund,
+    items: list[AssessmentItemRead],
+) -> list[AssessmentItemRead]:
+    if not items or not all(str(item.source_kind).startswith("prepared_bank") for item in items):
+        return items
+
+    sections = [AssessmentFundSection(**item) for item in _load_list(fund.sections_json)]
+    section_plan = {
+        section.code: max(0, int(section.planned_items or 0))
+        for section in sections
+        if section.enabled and int(section.planned_items or 0) > 0
+    }
+    if not section_plan:
+        return items
+
+    result: list[AssessmentItemRead] = []
+    counts = {code: 0 for code in section_plan}
+    for item in items:
+        limit = section_plan.get(item.section_code)
+        if limit is None:
+            continue
+        if counts[item.section_code] >= limit:
+            continue
+        counts[item.section_code] += 1
+        result.append(item)
+    return result
 
 
 def update_item_for_user(

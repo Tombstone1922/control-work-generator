@@ -4,17 +4,21 @@
 
 .heroTitleBlock {
   min-width: 0;
+  width: 100%;
 }
 
 .heroTitleRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  width: 100%;
 }
 
 .heroTitleRow h1 {
   margin: 0;
+  max-width: calc(100% - 74px);
 }
 
 .adminGearButton {
@@ -407,46 +411,24 @@
 }
 
 @media (max-width: 1200px) {
-  .historyGridThree {
-    grid-template-columns: 1fr;
-  }
-
-  .projectStatusGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .historyGridThree { grid-template-columns: 1fr; }
+  .projectStatusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1100px) {
-  .workspaceTabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .fosReadinessCard {
-    grid-template-columns: 1fr;
-  }
+  .workspaceTabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fosReadinessCard { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
   .workspaceTabs,
   .projectStatusGrid,
-  .fosReadinessGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .demoBankActions > button {
-    width: 100%;
-  }
-
-  .controlResultPanel span {
-    flex: 1 1 120px;
-  }
-
+  .fosReadinessGrid { grid-template-columns: 1fr; }
+  .heroTitleRow { flex-wrap: wrap; }
+  .heroTitleRow h1 { max-width: 100%; }
+  .demoBankActions > button { width: 100%; }
+  .controlResultPanel span { flex: 1 1 120px; }
   .variantHeader,
-  .questionTitleRow {
-    display: grid;
-  }
-
-  .miniRegenButton {
-    width: 100%;
-  }
+  .questionTitleRow { display: grid; }
+  .miniRegenButton { width: 100%; }
 }

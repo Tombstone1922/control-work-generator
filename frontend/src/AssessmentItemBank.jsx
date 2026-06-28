@@ -261,22 +261,37 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setSaving(true);
     setError('');
     try {
-      const response = await api.put(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`, {
-        topic: selectedItem.topic,
-        competency_code: selectedItem.competency_code,
-        indicator: selectedItem.indicator,
-        difficulty: selectedItem.difficulty,
-        text: selectedItem.text,
-        answer: selectedItem.answer,
-        criteria: selectedItem.criteria,
-        status: selectedItem.status,
-      });
+      const response = await api.put(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`, buildItemUpdatePayload(selectedItem));
       setItems((current) => current.map((item) => item.id === response.data.id ? response.data : item));
       await validateItems(false);
       await loadTopicContext(response.data.topic, false);
       setSuccess('Задание сохранено. Теперь его можно добавить в обучающую выборку.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить задание.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function replaceSelectedItemFromBank() {
+    if (!selectedItem || !canEdit) return;
+    const replacement = pickReplacementFromBank(items, selectedItem);
+    if (!replacement) {
+      setError('В банке нет другого задания такого же типа для замены.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const payload = buildItemUpdatePayload(replacement);
+      const response = await api.put(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`, payload);
+      setItems((current) => current.map((item) => item.id === selectedItem.id ? response.data : item));
+      setSelectedItemId(response.data.id);
+      await validateItems(false);
+      await loadTopicContext(response.data.topic, false);
+      setSuccess('Задание заменено другим вариантом из банка заданий.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось заменить задание из банка.');
     } finally {
       setSaving(false);
     }
@@ -348,7 +363,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
           {selectedItem ? <>
             <div className="questionTopline">
               <div><h3>{canEdit ? 'Редактор задания' : 'Просмотр задания'}</h3><SourceBadge kind={selectedItem.source_kind} /></div>
-              {canEdit && <div className="actionGroup"><button className="danger" type="button" onClick={deleteSelectedItem}>Удалить</button><button className="primary" type="button" onClick={saveSelectedItem} disabled={isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить'}</button></div>}
+              {canEdit && <div className="actionGroup"><button className="danger" type="button" onClick={deleteSelectedItem}>Удалить</button><button className="secondary" type="button" onClick={replaceSelectedItemFromBank} disabled={isSaving}>Заменить</button><button className="primary" type="button" onClick={saveSelectedItem} disabled={isSaving}>{isSaving ? 'Сохраняем...' : 'Сохранить'}</button></div>}
             </div>
             <ContextModuleTopicPanel context={selectedContext} isLoading={isLoadingContext} refresh={() => loadTopicContext(selectedItem.topic, true)} />
             <label>Формулировка<textarea value={selectedItem.text} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
@@ -356,7 +371,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
             <div className="miniGrid"><label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
             <label>Индикатор<textarea value={selectedItem.indicator} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
             <label>Критерии оценивания<textarea value={(selectedItem.criteria || []).join('\n')} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
-            <div className="sourceContextBox"><strong>Источник формирования</strong><p>{selectedItem.source_context || 'не указан'}</p></div>
+            <div className="sourceContextBox"><strong>Источник формирования</strong><p>{displaySourceContext(selectedItem.source_context) || 'не указан'}</p></div>
             {canEdit && <section className="trainingFeedback"><h3>Экспертная разметка для самообучения</h3><p className="muted">После ручной правки сохраните задание как хороший пример, плохой пример или пример, требующий доработки.</p><label>Комментарий преподавателя<textarea value={teacherComment} onChange={(event) => setTeacherComment(event.target.value)} /></label><div className="actionGroup trainingActions"><button className="secondary" type="button" onClick={() => addTrainingExample('needs_revision')} disabled={isTraining}>Нужно доработать</button><button className="danger" type="button" onClick={() => addTrainingExample('bad')} disabled={isTraining}>Плохой пример</button><button className="primary" type="button" onClick={() => addTrainingExample('good')} disabled={isTraining}>Хороший пример</button></div></section>}
           </> : <p className="muted">Выберите задание слева.</p>}
         </div>
@@ -374,12 +389,15 @@ function LearningModePanel({ generationMode, setGenerationMode, stats }) { const
 function ValidationDashboard({ validation, sectionMap }) { return <section className="itemValidation"><div className="itemBankStats"><span>Всего: <strong>{validation.total_items}</strong></span><span>С ответами: <strong>{validation.items_with_answers}</strong></span><span>С критериями: <strong>{validation.items_with_criteria}</strong></span><span>Дубли: <strong>{validation.duplicate_items}</strong></span></div>{validation.warnings?.length > 0 && <ul>{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}{validation.coverage_by_section?.length > 0 && <div className="coverageTableWrap"><table className="coverageTable"><thead><tr><th>Раздел</th><th>План</th><th>Факт</th></tr></thead><tbody>{validation.coverage_by_section.map((row) => <tr key={row.section_code}><td>{sectionMap[row.section_code] || row.section_code}</td><td>{row.planned_items}</td><td>{row.generated_items}</td></tr>)}</tbody></table></div>}</section>; }
 function GenerationSummary({ generation }) { const p = generation.profiling || {}; const warnings = (generation.warnings || []).map((warning) => String(warning).includes('Генератор 3.0') ? 'Задания сгенерированы.' : warning); return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{modeLabel(generation.requested_mode)}</strong></span><span>Использованный режим: <strong>{modeLabel(generation.used_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{generation.narrow_llm_generated_items}</strong></span><span>По примерам: <strong>{generation.learned_generated_items}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items}</strong></span><span>Версия модели: <strong>{generation.model_version}</strong></span></div>{Object.keys(p).length > 0 && <><h3>Профилирование генерации</h3><div className="itemBankStats"><span>Всего: <strong>{formatMs(p.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(p.context_builder_ms)}</strong></span><span>Примеры/ОМ: <strong>{formatMs(p.learned_ms)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(p.narrow_llm_ms)}</strong></span><span>Qwen3 14B: <strong>{formatMs(p.qwen_seed_ms)}</strong></span><span>Сохранение: <strong>{formatMs(p.save_ms)}</strong></span><span>План OM 2.0: <strong>{p.intelligent_plan_items ?? 0}</strong></span></div></>}{warnings.length > 0 && <div className="notice"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>; }
 function SourceBadge({ kind }) { return <span className={`sourceBadge source${String(kind || 'template')}`}>{kindLabel(kind)}</span>; }
-function kindLabel(kind) { return ({ learned: 'из примеров', template: 'шаблон', narrow_llm: 'LLM', hybrid: 'гибрид', qwen_seed: 'Qwen 14B', qwen35_seed: 'Qwen3.5-9B', qwen8_seed: 'Qwen3-8B', qwen_small_seed: 'Qwen Small', prepared_bank_v3: 'готовый банк' }[kind] || kind || 'шаблон'); }
+function kindLabel(kind) { return ({ learned: 'из примеров', template: 'шаблон', narrow_llm: 'LLM', hybrid: 'гибрид', qwen_seed: 'Qwen 14B', qwen35_seed: 'Qwen3.5-9B', qwen8_seed: 'Qwen3-8B', qwen_small_seed: 'Qwen Small', prepared_bank_v3: 'Интеллектуальный генератор 2.0' }[kind] || kind || 'шаблон'); }
 function assessmentTypeLabel(type) { return ({ oral: 'устный опрос', practice: 'практика', exam_questions: 'вопрос к зачету', exam_practice: 'практика к зачету', diagnostic: 'диагностика', test_bank: 'тест' }[type] || type); }
 function difficultyLabel(value) { return ({ easy: 'базовый', medium: 'средний', hard: 'повышенный' }[value] || value); }
 function modeLabel(mode) { return ({ intelligent_v2: 'Интеллектуальный генератор 2.0', prepared_bank_v3: 'Интеллектуальный генератор 2.0', qwen_seed_good: 'Qwen3 14B обучающая генерация', qwen35_seed_good: 'Qwen3.5 9B обучающая генерация', qwen8_seed_good: 'Qwen3 8B обучающая генерация', qwen_small_seed_good: 'Qwen Small обучающая генерация', hybrid: 'Гибридный режим', template: 'Шаблонный режим' }[mode] || mode); }
 function successMessage(mode) { return mode === INTELLIGENT_V2_UI_MODE ? 'Интеллектуальный генератор 2.0 сформировал ФОС.' : `Банк заданий сформирован: ${modeLabel(mode)}.`; }
-function shortSourceContext(value) { return value ? value.slice(0, 120) : 'без источника'; }
+function shortSourceContext(value) { const text = displaySourceContext(value); return text ? text.slice(0, 120) : 'без источника'; }
+function displaySourceContext(value) { const text = String(value || '').trim(); if (!text) return ''; const match = text.match(/Файл банка:\s*([^\s]+\.json)/i); if (text.includes('Генератор 3.0') && text.includes('Файл банка:')) return `Задание сохранено в файле банка ${match?.[1] || 'JSON-банка'}.`; return text; }
+function buildItemUpdatePayload(item) { return { topic: item.topic, competency_code: item.competency_code, indicator: item.indicator, difficulty: item.difficulty, text: item.text, answer: item.answer, criteria: item.criteria, status: item.status }; }
+function pickReplacementFromBank(items, selectedItem) { const base = items.filter((item) => item.id !== selectedItem.id && item.assessment_type === selectedItem.assessment_type && item.item_type === selectedItem.item_type && item.text !== selectedItem.text); const priorities = [base.filter((item) => item.section_code === selectedItem.section_code && item.difficulty === selectedItem.difficulty && item.competency_code === selectedItem.competency_code), base.filter((item) => item.section_code === selectedItem.section_code && item.difficulty === selectedItem.difficulty), base.filter((item) => item.section_code === selectedItem.section_code), base]; const pool = priorities.find((group) => group.length > 0) || []; return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null; }
 function downloadBlob(data, filename) { const url = window.URL.createObjectURL(new Blob([data])); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url); }
 function formatMs(value) { const number = Number(value || 0); if (number >= 1000) return `${Math.round(number / 100) / 10} с`; return `${Math.round(number)} мс`; }
 function sleep(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }

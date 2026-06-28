@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app import models
 from app.database import get_db
-from app.routers.auth import user_to_schema
-from app.schemas import UserActiveUpdate, UserRead, UserRoleUpdate
+from app.routers.auth import apply_user_profile_update, user_to_schema
+from app.schemas import UserActiveUpdate, UserProfileUpdate, UserRead, UserRoleUpdate
 from app.security import require_roles
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -19,6 +19,23 @@ def list_users(
 ) -> list[UserRead]:
     users = db.scalars(select(models.User).order_by(models.User.created_at.asc())).all()
     return [user_to_schema(user) for user in users]
+
+
+@router.patch("/users/{user_id}/profile", response_model=UserRead)
+def update_user_profile(
+    user_id: str,
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_roles("admin")),
+) -> UserRead:
+    user = db.get(models.User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден.")
+
+    apply_user_profile_update(user, payload, db, exclude_user_id=user.id)
+    db.commit()
+    db.refresh(user)
+    return user_to_schema(user)
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)

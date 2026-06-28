@@ -57,6 +57,8 @@ def ensure_can_edit_program_content(user: models.User, program: models.Program |
 def ensure_can_edit_fund_content(user: models.User, fund: models.AssessmentFund | None) -> None:
     if fund is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ФОС не найден или нет доступа.")
+    if is_admin(user) or user.role == "methodist":
+        return
     ensure_can_edit_program_content(user, fund.program, fund.status)
 
 

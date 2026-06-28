@@ -1,14 +1,25 @@
 const USER_KEY = 'control_work_generator_user';
 const TOKEN_KEY = 'control_work_generator_token';
 const API_URL = 'http://127.0.0.1:8000';
-let historyState = { loading: false, programs: [], generations: [] };
+
+let historyState = {
+  loading: false,
+  programs: [],
+  generations: [],
+  funds: [],
+  loadedAt: 0,
+};
+
+function currentUser() {
+  try {
+    return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
 
 function hasUser() {
-  try {
-    return Boolean(JSON.parse(localStorage.getItem(USER_KEY) || 'null'));
-  } catch {
-    return false;
-  }
+  return Boolean(currentUser());
 }
 
 function countGeneratedItems() {
@@ -30,21 +41,28 @@ function isAssessmentGeneration(item) {
 }
 
 async function loadHistoryForFallback() {
-  if (historyState.loading || historyState.programs.length || historyState.generations.length) return;
   const token = localStorage.getItem(TOKEN_KEY) || '';
-  if (!token) return;
+  if (!token || historyState.loading) return;
+
+  const isFresh = Date.now() - historyState.loadedAt < 5000;
+  if (isFresh && (historyState.programs.length || historyState.generations.length || historyState.funds.length)) return;
+
   historyState.loading = true;
   try {
     const headers = { Authorization: `Bearer ${token}` };
-    const [programsResponse, generationsResponse] = await Promise.all([
+    const [programsResponse, generationsResponse, fundsResponse] = await Promise.all([
       fetch(`${API_URL}/api/programs/`, { headers }),
       fetch(`${API_URL}/api/generation/`, { headers }),
+      fetch(`${API_URL}/api/assessment-funds/`, { headers }),
     ]);
     historyState.programs = programsResponse.ok ? await programsResponse.json() : [];
     historyState.generations = generationsResponse.ok ? await generationsResponse.json() : [];
+    historyState.funds = fundsResponse.ok ? await fundsResponse.json() : [];
+    historyState.loadedAt = Date.now();
   } catch {
     historyState.programs = [];
     historyState.generations = [];
+    historyState.funds = [];
   } finally {
     historyState.loading = false;
   }
@@ -85,14 +103,23 @@ function renderColumn(title, items, mapper) {
   return column;
 }
 
+function renameHistoryTitles() {
+  document.querySelectorAll('h2').forEach((heading) => {
+    if (heading.textContent.trim() === 'История генераций и утверждения') {
+      heading.textContent = 'Истории генерации';
+    }
+  });
+}
+
 function renderFallbackHistory() {
   const adminPage = document.querySelector('.adminPage');
   if (!adminPage) return;
   const intro = adminPage.querySelector('.adminIntro');
   if (!intro || !intro.textContent.includes('Хранилище')) return;
 
-  const existingReactHistory = adminPage.querySelector('.historyGridThree');
+  const existingReactHistory = adminPage.querySelector('.historyCard:not(.alwaysHistoryFallback) .historyGridThree');
   const existingFallback = adminPage.querySelector('.alwaysHistoryFallback');
+
   if (existingReactHistory) {
     existingFallback?.remove();
     return;
@@ -105,7 +132,7 @@ function renderFallbackHistory() {
   header.className = 'sectionHeader';
   const headerText = document.createElement('div');
   const title = document.createElement('h2');
-  title.textContent = 'История генераций и утверждения';
+  title.textContent = 'Истории генерации';
   const subtitle = document.createElement('p');
   subtitle.className = 'muted';
   subtitle.textContent = 'Ранее загруженные РПД, сформированные оценочные материалы и контрольные работы.';
@@ -134,8 +161,84 @@ function renderFallbackHistory() {
   intro.insertAdjacentElement('afterend', card);
 }
 
+function statusLabel(status) {
+  return ({
+    draft: 'Черновик',
+    generated: 'Сформировано',
+    in_review: 'На проверке',
+    revision_required: 'Требует доработки',
+    approved: 'Утверждено',
+  }[status] || status || 'статус не указан');
+}
+
+function renderSentForReviewBlock() {
+  const user = currentUser();
+  const adminPage = document.querySelector('.adminPage');
+  if (!adminPage) return;
+
+  const existing = adminPage.querySelector('.sentForReviewBlock');
+  if (!['admin', 'methodist'].includes(user?.role)) {
+    existing?.remove();
+    return;
+  }
+
+  const intro = adminPage.querySelector('.adminIntro');
+  if (!intro || !intro.textContent.includes('Хранилище')) {
+    existing?.remove();
+    return;
+  }
+
+  existing?.remove();
+  const inReviewFunds = historyState.funds.filter((item) => item.status === 'in_review');
+  const inReviewGenerations = historyState.generations.filter((item) => item.status === 'in_review');
+  const items = inReviewFunds.length ? inReviewFunds : inReviewGenerations;
+
+  const card = document.createElement('section');
+  card.className = 'card historyCard sentForReviewBlock';
+  const header = document.createElement('div');
+  header.className = 'sectionHeader';
+  const text = document.createElement('div');
+  const title = document.createElement('h2');
+  title.textContent = 'Отправленные на проверку';
+  const subtitle = document.createElement('p');
+  subtitle.className = 'muted';
+  subtitle.textContent = 'ФОС и оценочные материалы, ожидающие проверки методистом или администратором.';
+  text.append(title, subtitle);
+  header.appendChild(text);
+  card.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'historyItems';
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'Пока нет материалов, отправленных на проверку.';
+    list.appendChild(empty);
+  } else {
+    items.slice(0, 8).forEach((item) => {
+      const titleText = item.discipline_name || item.title || item.filename || `${String(item.session_id || item.fund_id || '').slice(0, 8)}...`;
+      const total = item.quality_report?.total_questions || item.validation?.total_items || item.total_questions || 145;
+      list.appendChild(makeHistoryButton(titleText, `${statusLabel(item.status)} · ${total} элементов ФОС`));
+    });
+  }
+  card.appendChild(list);
+
+  const historyCard = adminPage.querySelector('.historyCard:not(.sentForReviewBlock)');
+  if (historyCard) historyCard.insertAdjacentElement('afterend', card);
+  else intro.insertAdjacentElement('afterend', card);
+}
+
+function hideMethodistDashboards() {
+  const user = currentUser();
+  const shouldHide = user?.role === 'methodist';
+  document.querySelectorAll('.projectStatusDashboard, .adminDashboard').forEach((node) => {
+    node.style.display = shouldHide ? 'none' : '';
+  });
+}
+
 export async function initAdminUserTools() {
   if (!hasUser()) return false;
+
   document.querySelectorAll('section.notice').forEach((notice) => {
     const title = notice.querySelector('strong')?.textContent || '';
     const buttons = notice.querySelector('.actionGroup');
@@ -143,8 +246,12 @@ export async function initAdminUserTools() {
       buttons.style.display = countGeneratedItems() > 0 ? '' : 'none';
     }
   });
+
+  hideMethodistDashboards();
+  renameHistoryTitles();
   await loadHistoryForFallback();
   renderFallbackHistory();
+  renderSentForReviewBlock();
   return true;
 }
 

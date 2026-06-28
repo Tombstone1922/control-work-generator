@@ -29,6 +29,12 @@ class UserActiveUpdate(BaseModel):
     is_active: bool
 
 
+class UserProfileUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -219,44 +225,3 @@ class TrainingDatasetStats(BaseModel):
     revision_examples: int = 0
     topics_count: int = 0
     competencies_count: int = 0
-    assessment_types_count: int = 0
-
-
-class GenerationRequest(BaseModel):
-    program_id: str
-    variants_count: int = Field(default=2, ge=1, le=20)
-    questions_per_variant: int = Field(default=5, ge=1, le=50)
-    difficulty: str = Field(default="medium", description="easy | medium | hard")
-    question_types: List[str] = Field(default_factory=lambda: ["open"])
-
-
-class Question(BaseModel):
-    id: str
-    topic: str
-    text: str
-    type: str
-    difficulty: str
-    answer: str = ""
-    criteria: List[str] = Field(default_factory=list)
-
-
-class ControlWorkVariant(BaseModel):
-    variant_number: int
-    questions: List[Question]
-
-
-class QualityReport(BaseModel):
-    topic_coverage: float
-    duplicate_rate: float
-    total_questions: int
-    recommendations: List[str]
-
-
-class GenerationResponse(BaseModel):
-    session_id: str
-    program_id: str
-    variants: List[ControlWorkVariant]
-    quality_report: QualityReport
-    status: str = "generated"
-    review_comment: str = ""
-    reviewed_by_user_id: str | None = None

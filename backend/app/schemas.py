@@ -173,6 +173,7 @@ class AssessmentFundUpdateRequest(BaseModel):
 class AssessmentFundResponse(BaseModel):
     fund_id: str
     program_id: str
+    program_filename: str = ""
     title: str
     discipline_name: str
     status: str
@@ -180,6 +181,8 @@ class AssessmentFundResponse(BaseModel):
     sections: List[AssessmentFundSection]
     competencies: List[AssessmentCompetencyRead]
     validation: AssessmentFundValidation
+    created_at: str = ""
+    updated_at: str = ""
 
 
 class AssessmentItemRead(BaseModel):

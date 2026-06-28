@@ -21,9 +21,16 @@ from app.routers import (
 
 app = FastAPI(title="Control Work Generator API", version="1.0.0")
 
+DEV_FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=DEV_FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

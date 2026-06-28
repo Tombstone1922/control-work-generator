@@ -1,7 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+
+const API_URL = 'http://127.0.0.1:8000';
+const TOKEN_KEY = 'control_work_generator_token';
 
 function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
   const [assessmentStatus, setAssessmentStatus] = useState({ items: 0, funds: 0, isLoading: false });
+  const effectiveApi = useMemo(() => {
+    if (api) return api;
+    const token = localStorage.getItem(TOKEN_KEY) || '';
+    return axios.create({
+      baseURL: API_URL,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  }, [api]);
 
   const relevantGenerations = program?.program_id
     ? generationsHistory.filter((item) => item.program_id === program.program_id)
@@ -13,7 +25,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
   const quality = Number(program?.analysis_report?.diagnostics?.quality_score || 0);
 
   useEffect(() => {
-    if (!api || !program?.program_id) {
+    if (!effectiveApi || !program?.program_id) {
       setAssessmentStatus({ items: 0, funds: 0, isLoading: false });
       return undefined;
     }
@@ -23,7 +35,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
     async function loadAssessmentStatus() {
       try {
         setAssessmentStatus((current) => ({ ...current, isLoading: true }));
-        const fundsResponse = await api.get('/api/assessment-funds/');
+        const fundsResponse = await effectiveApi.get('/api/assessment-funds/');
         const relatedFunds = fundsResponse.data.filter((fund) => fund.program_id === program.program_id);
         let generatedItems = relatedFunds.reduce((sum, fund) => (
           sum + (fund.sections || []).reduce((sectionSum, section) => sectionSum + Number(section.generated_items || 0), 0)
@@ -31,7 +43,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
 
         if (generatedItems === 0 && relatedFunds.length > 0) {
           const itemResponses = await Promise.allSettled(
-            relatedFunds.map((fund) => api.get(`/api/assessment-items/${fund.fund_id}`)),
+            relatedFunds.map((fund) => effectiveApi.get(`/api/assessment-items/${fund.fund_id}`)),
           );
           generatedItems = itemResponses.reduce((sum, result) => (
             result.status === 'fulfilled' ? sum + Number(result.value.data?.length || 0) : sum
@@ -53,7 +65,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [api, program?.program_id]);
+  }, [effectiveApi, program?.program_id]);
 
   const steps = [
     {

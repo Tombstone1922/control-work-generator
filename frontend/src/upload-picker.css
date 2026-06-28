@@ -84,6 +84,29 @@
   display: none;
 }
 
+.adminCreateUserPanel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #dfe6f5;
+  border-radius: 18px;
+  background: #f8faff;
+}
+
+.adminCreateUserGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.adminCreateUserGrid label {
+  margin-bottom: 0;
+}
+
+.adminCreateUserGrid .primary {
+  min-height: 48px;
+}
+
 body.darkTheme .uploadCard .fileInput {
   border-color: rgba(135, 155, 235, 0.42);
   background: linear-gradient(135deg, rgba(25, 33, 57, 0.94), rgba(31, 42, 74, 0.94));
@@ -93,4 +116,16 @@ body.darkTheme .uploadCard .fileInput {
 body.darkTheme .uploadCard .selectedFile {
   background: rgba(122, 147, 255, 0.14);
   color: #dbe5ff;
+}
+
+@media (max-width: 1100px) {
+  .adminCreateUserGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .adminCreateUserGrid {
+    grid-template-columns: 1fr;
+  }
 }

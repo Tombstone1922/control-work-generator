@@ -30,6 +30,11 @@ EXCLUDED_TOPIC_PHRASES = {
     "информационные системы и технологии",
 }
 
+EXCLUDED_OUTCOME_PREFIXES = (
+    "знать факторы, влияющие на",
+    "знать факторы, вляющие на",
+)
+
 
 def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
     analysis = analyze_rpd_text(text)
@@ -59,14 +64,26 @@ def _sanitize_analysis_topics(analysis: RpdAnalysisResult, *, filename: str, tex
             f"После очистки нормальных тем было недостаточно; восстановлены темы по предметному профилю: {len(recovered_topics)}."
         )
 
+    raw_outcomes_count = len(analysis.learning_outcomes)
+    cleaned_outcomes = [
+        outcome for outcome in analysis.learning_outcomes
+        if not _is_excluded_outcome(outcome)
+    ]
+    outcomes_removed_count = max(raw_outcomes_count - len(cleaned_outcomes), 0)
+    if outcomes_removed_count:
+        analysis.diagnostics.warnings.append(f"Очистка результатов обучения удалила неполные служебные фрагменты: {outcomes_removed_count}.")
+
     analysis.topics = cleaned_topics
     analysis.topic_sources = list(cleaned_topics)
+    analysis.learning_outcomes = cleaned_outcomes
+    analysis.outcome_sources = list(cleaned_outcomes)
     analysis.diagnostics.topics_count = len(cleaned_topics)
+    analysis.diagnostics.learning_outcomes_count = len(cleaned_outcomes)
     analysis.diagnostics.quality_score = min(
         100,
         min(len(cleaned_topics) * 5, 45)
         + min(len(analysis.competencies) * 5, 20)
-        + min(len(analysis.learning_outcomes) * 4, 24)
+        + min(len(cleaned_outcomes) * 4, 24)
         + min(len(analysis.detected_sections) * 3, 11),
     )
     return analysis
@@ -108,6 +125,11 @@ def _merge_unique_topics(primary: list[str], fallback: list[str]) -> list[str]:
 def _is_excluded_topic(value: str) -> bool:
     normalized = _norm_topic(value)
     return normalized in EXCLUDED_TOPIC_PHRASES
+
+
+def _is_excluded_outcome(value: str) -> bool:
+    normalized = _norm_topic(value)
+    return any(normalized.startswith(prefix) for prefix in EXCLUDED_OUTCOME_PREFIXES)
 
 
 def _norm_topic(value: str) -> str:

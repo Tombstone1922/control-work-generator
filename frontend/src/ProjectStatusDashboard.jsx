@@ -1,13 +1,12 @@
 import React from 'react';
 
-function ProjectStatusDashboard({ program, generationsHistory = [], activePage }) {
+function ProjectStatusDashboard({ program, generationsHistory = [] }) {
   const relevantGenerations = program?.program_id
     ? generationsHistory.filter((item) => item.program_id === program.program_id)
     : [];
   const hasControlWork = relevantGenerations.some((item) => !isAssessmentMaterialGeneration(item));
-  const hasFosGeneration = relevantGenerations.some(isAssessmentMaterialGeneration);
+  const hasAssessmentMaterials = relevantGenerations.some(isAssessmentMaterialGeneration);
   const quality = Number(program?.analysis_report?.diagnostics?.quality_score || 0);
-  const isOnFos = activePage === 'fos';
 
   const steps = [
     {
@@ -26,19 +25,29 @@ function ProjectStatusDashboard({ program, generationsHistory = [], activePage }
       ready: hasControlWork,
     },
     {
-      title: 'ФОС',
-      detail: hasFosGeneration || isOnFos ? 'модуль готов' : 'ожидает генерацию',
-      ready: hasFosGeneration || isOnFos,
+      title: 'ФОС / ОМ',
+      detail: hasAssessmentMaterials ? 'сформирован' : 'ожидает генерацию',
+      ready: hasAssessmentMaterials,
     },
     {
-      title: 'Банк заданий',
-      detail: hasFosGeneration ? 'готов к просмотру' : 'можно сформировать',
-      ready: hasFosGeneration,
+      title: 'Банк заданий КР готов',
+      detail: hasControlWork ? 'готов к просмотру' : 'ожидает генерацию КР',
+      ready: hasControlWork,
     },
     {
-      title: 'Экспорт',
-      detail: hasControlWork || hasFosGeneration ? 'доступен DOCX' : 'будет доступен после генерации',
-      ready: hasControlWork || hasFosGeneration,
+      title: 'Банк заданий ОМ готов',
+      detail: hasAssessmentMaterials ? 'готов к просмотру' : 'ожидает генерацию ОМ',
+      ready: hasAssessmentMaterials,
+    },
+    {
+      title: 'КР готова к экспорту',
+      detail: hasControlWork ? 'доступен DOCX' : 'сначала сформируйте КР',
+      ready: hasControlWork,
+    },
+    {
+      title: 'ОМ готов к экспорту',
+      detail: hasAssessmentMaterials ? 'доступен DOCX' : 'сначала сформируйте ОМ',
+      ready: hasAssessmentMaterials,
     },
   ];
 

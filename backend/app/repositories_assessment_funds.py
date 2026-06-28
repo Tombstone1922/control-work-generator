@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -35,11 +36,22 @@ def _dt(value) -> str:
     return value.isoformat() if value else ""
 
 
+def _user_name(user: models.User | None) -> str:
+    return user.full_name if user else ""
+
+
+def _user_email(user: models.User | None) -> str:
+    return user.email if user else ""
+
+
 def create_assessment_fund(
     db: Session,
     program: models.Program,
     draft: AssessmentFundDraft,
 ) -> AssessmentFundResponse:
+    validation_payload = draft.validation.model_dump()
+    validation_payload["created_by_name"] = _user_name(program.owner)
+    validation_payload["created_by_email"] = _user_email(program.owner)
     entity = models.AssessmentFund(
         id=str(uuid4()),
         program_id=program.id,
@@ -48,7 +60,7 @@ def create_assessment_fund(
         status="draft",
         assessment_types_json=_dump(draft.assessment_types),
         sections_json=_dump([section.model_dump() for section in draft.sections]),
-        validation_json=_dump(draft.validation.model_dump()),
+        validation_json=_dump(validation_payload),
     )
     db.add(entity)
     db.flush()
@@ -74,6 +86,8 @@ def create_assessment_fund(
 
 def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
     competencies = [competency_to_schema(item) for item in entity.competencies]
+    validation_payload = _load_dict(entity.validation_json)
+    owner = entity.program.owner if entity.program else None
     return AssessmentFundResponse(
         fund_id=entity.id,
         program_id=entity.program_id,
@@ -84,9 +98,14 @@ def fund_to_schema(entity: models.AssessmentFund) -> AssessmentFundResponse:
         assessment_types=_load_list(entity.assessment_types_json),
         sections=[AssessmentFundSection(**item) for item in _load_list(entity.sections_json)],
         competencies=competencies,
-        validation=AssessmentFundValidation(**_load_dict(entity.validation_json)),
+        validation=AssessmentFundValidation(**validation_payload),
         created_at=_dt(entity.created_at),
         updated_at=_dt(entity.updated_at),
+        created_by_name=validation_payload.get("created_by_name") or _user_name(owner),
+        created_by_email=validation_payload.get("created_by_email") or _user_email(owner),
+        reviewed_by_name=validation_payload.get("reviewed_by_name", ""),
+        reviewed_by_email=validation_payload.get("reviewed_by_email", ""),
+        reviewed_at=validation_payload.get("reviewed_at", ""),
     )
 
 
@@ -106,7 +125,7 @@ def list_assessment_funds_for_user(db: Session, user: models.User) -> list[Asses
         .join(models.Program, models.AssessmentFund.program_id == models.Program.id)
         .options(
             selectinload(models.AssessmentFund.competencies),
-            selectinload(models.AssessmentFund.program),
+            selectinload(models.AssessmentFund.program).selectinload(models.Program.owner),
         )
         .order_by(models.AssessmentFund.updated_at.desc())
     )
@@ -148,6 +167,8 @@ def update_assessment_fund_for_user(
     if sections is not None:
         entity.sections_json = _dump([section.model_dump() for section in sections])
     _recalculate_validation(entity)
+    if status in {"approved", "revision_required"}:
+        _set_review_metadata(entity, user)
 
     db.commit()
     db.refresh(entity)
@@ -255,11 +276,37 @@ def delete_competency_for_user(
     return fund_to_schema(_get_fund_entity(db, fund.id))
 
 
+def _preserved_validation_metadata(entity: models.AssessmentFund) -> dict:
+    current = _load_dict(entity.validation_json)
+    keys = (
+        "created_by_name",
+        "created_by_email",
+        "reviewed_by_name",
+        "reviewed_by_email",
+        "reviewed_at",
+    )
+    return {key: current.get(key, "") for key in keys if current.get(key)}
+
+
 def _recalculate_validation(entity: models.AssessmentFund) -> None:
+    metadata = _preserved_validation_metadata(entity)
+    if "created_by_name" not in metadata and entity.program and entity.program.owner:
+        metadata["created_by_name"] = entity.program.owner.full_name
+        metadata["created_by_email"] = entity.program.owner.email
     sections = [AssessmentFundSection(**item) for item in _load_list(entity.sections_json)]
     competencies = [competency_to_schema(item) for item in entity.competencies]
     topics = json.loads(entity.program.topics_json or "[]")
-    entity.validation_json = _dump(validate_assessment_fund(sections, competencies, topics).model_dump())
+    validation = validate_assessment_fund(sections, competencies, topics).model_dump()
+    validation.update(metadata)
+    entity.validation_json = _dump(validation)
+
+
+def _set_review_metadata(entity: models.AssessmentFund, user: models.User) -> None:
+    payload = _load_dict(entity.validation_json)
+    payload["reviewed_by_name"] = user.full_name
+    payload["reviewed_by_email"] = user.email
+    payload["reviewed_at"] = datetime.utcnow().isoformat()
+    entity.validation_json = _dump(payload)
 
 
 def _get_fund_entity(db: Session, fund_id: str) -> models.AssessmentFund | None:
@@ -269,6 +316,6 @@ def _get_fund_entity(db: Session, fund_id: str) -> models.AssessmentFund | None:
         .options(
             selectinload(models.AssessmentFund.competencies),
             selectinload(models.AssessmentFund.items),
-            selectinload(models.AssessmentFund.program),
+            selectinload(models.AssessmentFund.program).selectinload(models.Program.owner),
         )
     )

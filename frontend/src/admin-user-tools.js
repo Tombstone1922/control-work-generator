@@ -10,7 +10,8 @@ let historyState = {
   loadedAt: 0,
 };
 let sentReviewSignature = '';
-let approvedFundsSignature = '';
+let revisionSignature = '';
+let approvedSignature = '';
 
 function currentUser() {
   try {
@@ -64,7 +65,7 @@ async function loadHistoryForFallback(force = false) {
   const token = localStorage.getItem(TOKEN_KEY) || '';
   if (!token || historyState.loading) return;
 
-  const isFresh = Date.now() - historyState.loadedAt < 5000;
+  const isFresh = Date.now() - historyState.loadedAt < 1800;
   if (!force && isFresh && (historyState.programs.length || historyState.generations.length || historyState.funds.length)) return;
 
   historyState.loading = true;
@@ -193,99 +194,69 @@ function statusLabel(status) {
 }
 
 function fundTotalItems(fund) {
-  return Math.min(
-    145,
-    Number(fund?.validation?.total_items || fund?.sections?.reduce((sum, section) => sum + Number(section.generated_items || 0), 0) || 145),
-  );
+  const sectionCount = fund?.sections?.reduce((sum, section) => sum + Number(section.generated_items || 0), 0) || 0;
+  return Math.min(145, Number(fund?.validation?.total_items || sectionCount || 145));
 }
 
 function fundTitle(fund) {
   return fund?.discipline_name || fund?.title || `ФОС ${String(fund?.fund_id || '').slice(0, 8)}`;
 }
 
-async function openReviewFund(fundId) {
-  const card = document.querySelector('.sentForReviewBlock') || document.querySelector('.approvedFundsFallback');
-  if (!card) return;
-  const previous = card.querySelector('.reviewDetailCard');
-  previous?.remove();
-
-  const detail = document.createElement('article');
-  detail.className = 'notice reviewDetailCard';
-  detail.innerHTML = '<strong>Открываем карточку проверки...</strong>';
-  card.appendChild(detail);
-
-  try {
-    const fund = await requestJson(`/api/assessment-funds/${fundId}`);
-    renderReviewDetail(card, fund);
-  } catch (error) {
-    detail.innerHTML = `<strong>Не удалось открыть ФОС.</strong><p class="muted">${error.message}</p>`;
-  }
+function findCardByHeading(headingText) {
+  return Array.from(document.querySelectorAll('.adminPage .historyCard')).find((card) => (
+    Array.from(card.querySelectorAll('h2')).some((heading) => heading.textContent.trim() === headingText)
+  ));
 }
 
-function renderReviewDetail(container, fund) {
-  container.querySelector('.reviewDetailCard')?.remove();
-
-  const detail = document.createElement('article');
-  detail.className = 'notice reviewDetailCard';
-
-  const title = document.createElement('strong');
-  title.textContent = `Карточка проверки: ${fundTitle(fund)}`;
-  const meta = document.createElement('p');
-  meta.className = 'muted';
-  meta.textContent = `${statusLabel(fund.status)} · ${fundTotalItems(fund)} элементов ФОС · ${fund.validation?.completeness_score || 0}% заполненность`;
-
-  const actions = document.createElement('div');
-  actions.className = 'actionGroup';
-
-  if (fund.status === 'in_review') {
-    const approve = document.createElement('button');
-    approve.className = 'primary';
-    approve.type = 'button';
-    approve.textContent = 'Утвердить ФОС';
-    approve.addEventListener('click', () => updateFundReviewStatus(fund.fund_id, 'approved'));
-
-    const revision = document.createElement('button');
-    revision.className = 'danger';
-    revision.type = 'button';
-    revision.textContent = 'Вернуть на доработку';
-    revision.addEventListener('click', () => updateFundReviewStatus(fund.fund_id, 'revision_required'));
-
-    actions.append(approve, revision);
+function findAppFiber() {
+  const rootNode = document.querySelector('.appShell');
+  if (!rootNode) return null;
+  const key = Object.keys(rootNode).find((item) => item.startsWith('__reactFiber$'));
+  let fiber = key ? rootNode[key] : null;
+  while (fiber) {
+    if (fiber.type?.name === 'App') return fiber;
+    fiber = fiber.return;
   }
-
-  const refresh = document.createElement('button');
-  refresh.className = 'secondary';
-  refresh.type = 'button';
-  refresh.textContent = 'Обновить карточку';
-  refresh.addEventListener('click', () => openReviewFund(fund.fund_id));
-  actions.appendChild(refresh);
-
-  detail.append(title, meta, actions);
-  container.appendChild(detail);
+  return null;
 }
 
-async function updateFundReviewStatus(fundId, status) {
-  const adminPage = document.querySelector('.adminPage');
-  const detail = document.querySelector('.reviewDetailCard');
+function dispatchAppHook(index, value) {
+  const appFiber = findAppFiber();
+  if (!appFiber?.memoizedState) return false;
+  let hook = appFiber.memoizedState;
+  for (let i = 0; i < index; i += 1) {
+    hook = hook?.next;
+  }
+  if (!hook?.queue?.dispatch) return false;
+  hook.queue.dispatch(value);
+  return true;
+}
+
+async function openFundInFos(fund) {
+  if (!fund?.program_id) return;
   try {
-    await requestJson(`/api/assessment-funds/${fundId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    });
-    if (detail) {
-      detail.innerHTML = `<strong>${status === 'approved' ? 'ФОС утвержден.' : 'ФОС возвращен на доработку.'}</strong><p class="muted">Списки обновлены.</p>`;
+    const program = await requestJson(`/api/programs/${fund.program_id}`);
+    const programSet = dispatchAppHook(9, program);
+    const storageSet = dispatchAppHook(5, true);
+    const pageSet = dispatchAppHook(4, 'fos');
+    if (programSet && storageSet && pageSet) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
-    sentReviewSignature = '';
-    approvedFundsSignature = '';
-    await loadHistoryForFallback(true);
-    renderSentForReviewBlock();
-    renderApprovedFundsBlock();
+    showTemporaryMessage('Не удалось автоматически открыть ФОС. Откройте его через карточку РПД в истории.');
   } catch (error) {
-    const errorBox = document.createElement('div');
-    errorBox.className = 'alert';
-    errorBox.textContent = error.message;
-    adminPage?.prepend(errorBox);
+    showTemporaryMessage(error.message || 'Не удалось открыть ФОС.');
   }
+}
+
+function showTemporaryMessage(text) {
+  const adminPage = document.querySelector('.adminPage');
+  if (!adminPage) return;
+  const alert = document.createElement('div');
+  alert.className = 'alert';
+  alert.textContent = text;
+  adminPage.prepend(alert);
+  window.setTimeout(() => alert.remove(), 4000);
 }
 
 function renderSentForReviewBlock() {
@@ -339,65 +310,69 @@ function renderSentForReviewBlock() {
       list.appendChild(makeHistoryButton(
         fundTitle(fund),
         `${statusLabel(fund.status)} · ${fundTotalItems(fund)} элементов ФОС`,
-        () => openReviewFund(fund.fund_id),
+        () => openFundInFos(fund),
       ));
     });
   }
   card.appendChild(list);
 
-  const historyCard = adminPage.querySelector('.historyCard:not(.sentForReviewBlock)');
-  if (historyCard) historyCard.insertAdjacentElement('afterend', card);
+  const revisionBlock = findCardByHeading('Элементы доработки ФОС');
+  const historyCard = adminPage.querySelector('.historyCard:not(.sentForReviewBlock):not(.approvedFundsFallback)');
+  if (revisionBlock) revisionBlock.insertAdjacentElement('beforebegin', card);
+  else if (historyCard) historyCard.insertAdjacentElement('afterend', card);
   else intro.insertAdjacentElement('afterend', card);
 }
 
-function renderApprovedFundsBlock() {
-  const adminPage = document.querySelector('.adminPage');
-  if (!adminPage) return;
-  const intro = adminPage.querySelector('.adminIntro');
-  if (!intro || !intro.textContent.includes('Хранилище')) return;
+function renderFundListInExistingBlock(headingText, funds, emptyText, signature, setSignature) {
+  const card = findCardByHeading(headingText);
+  if (!card) return signature;
 
-  const approvedFunds = historyState.funds.filter((item) => item.status === 'approved');
-  const signature = approvedFunds.map((item) => `${item.fund_id}:${item.status}:${fundTotalItems(item)}`).join('|');
-  if (signature === approvedFundsSignature && adminPage.querySelector('.approvedFundsFallback')) return;
-  approvedFundsSignature = signature;
+  const nextSignature = funds.map((item) => `${item.fund_id}:${item.status}:${fundTotalItems(item)}`).join('|');
+  if (nextSignature === signature && card.dataset.fundsSynced === 'true') return signature;
 
-  let card = adminPage.querySelector('.approvedFundsFallback');
-  card?.remove();
-  card = document.createElement('section');
-  card.className = 'card historyCard approvedFundsFallback';
-  const header = document.createElement('div');
-  header.className = 'sectionHeader';
-  const text = document.createElement('div');
-  const title = document.createElement('h2');
-  title.textContent = 'Утвержденные ФОС';
-  const subtitle = document.createElement('p');
-  subtitle.className = 'muted';
-  subtitle.textContent = 'Фонды оценочных средств, подтвержденные методистом или администратором.';
-  text.append(title, subtitle);
-  header.appendChild(text);
-  card.appendChild(header);
+  const list = card.querySelector('.historyItems');
+  if (!list) return signature;
+  list.replaceChildren();
 
-  const list = document.createElement('div');
-  list.className = 'historyItems';
-  if (!approvedFunds.length) {
+  if (!funds.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = 'Утвержденные ФОС пока не зафиксированы.';
+    empty.textContent = emptyText;
     list.appendChild(empty);
   } else {
-    approvedFunds.slice(0, 8).forEach((fund) => {
+    funds.slice(0, 8).forEach((fund) => {
       list.appendChild(makeHistoryButton(
         fundTitle(fund),
         `${statusLabel(fund.status)} · ${fundTotalItems(fund)} элементов ФОС`,
-        () => openReviewFund(fund.fund_id),
+        () => openFundInFos(fund),
       ));
     });
   }
-  card.appendChild(list);
 
-  const revisionBlock = Array.from(adminPage.querySelectorAll('.historyCard')).find((node) => node.textContent.includes('Элементы доработки ФОС'));
-  if (revisionBlock) revisionBlock.insertAdjacentElement('beforebegin', card);
-  else (adminPage.querySelector('.sentForReviewBlock') || adminPage.querySelector('.historyCard') || intro).insertAdjacentElement('afterend', card);
+  card.dataset.fundsSynced = 'true';
+  return nextSignature;
+}
+
+function syncRevisionAndApprovedBlocks() {
+  document.querySelector('.approvedFundsFallback')?.remove();
+  const revisionFunds = historyState.funds.filter((item) => item.status === 'revision_required');
+  const approvedFunds = historyState.funds.filter((item) => item.status === 'approved');
+
+  revisionSignature = renderFundListInExistingBlock(
+    'Элементы доработки ФОС',
+    revisionFunds,
+    'Пока нет элементов доработки.',
+    revisionSignature,
+    (value) => { revisionSignature = value; },
+  );
+
+  approvedSignature = renderFundListInExistingBlock(
+    'Утвержденные ФОС',
+    approvedFunds,
+    'Утвержденные ФОС пока не зафиксированы.',
+    approvedSignature,
+    (value) => { approvedSignature = value; },
+  );
 }
 
 function hideMethodistDashboards() {
@@ -424,7 +399,7 @@ export async function initAdminUserTools() {
   await loadHistoryForFallback();
   renderFallbackHistory();
   renderSentForReviewBlock();
-  renderApprovedFundsBlock();
+  syncRevisionAndApprovedBlocks();
   return true;
 }
 

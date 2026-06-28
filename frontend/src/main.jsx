@@ -12,6 +12,7 @@ import './theme.css';
 import './dark-item-bank.css';
 import './workspace-tabs.css';
 import './admin-user-tools.js';
+import './methodist-fos-admin-mode.js';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

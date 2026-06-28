@@ -26,6 +26,10 @@ router = APIRouter(prefix="/api/programs", tags=["programs"])
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+EXCLUDED_TOPIC_PHRASES = {
+    "информационные системы и технологии",
+}
+
 
 def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
     analysis = analyze_rpd_text(text)
@@ -36,7 +40,10 @@ def _analyze_program_text(filename: str, text: str) -> RpdAnalysisResult:
 
 def _sanitize_analysis_topics(analysis: RpdAnalysisResult, *, filename: str, text: str) -> RpdAnalysisResult:
     raw_count = len(analysis.topics)
-    cleaned_topics = sanitize_rpd_topics(analysis.topics)
+    cleaned_topics = [
+        topic for topic in sanitize_rpd_topics(analysis.topics)
+        if not _is_excluded_topic(topic)
+    ]
     removed_count = max(raw_count - len(cleaned_topics), 0)
     if removed_count:
         analysis.diagnostics.warnings.append(f"Очистка тем РПД удалила служебные фрагменты таблиц и вопросы ФОС: {removed_count}.")
@@ -77,7 +84,7 @@ def _recover_missing_topics(*, filename: str, text: str, current_topics: list[st
     existing = {_norm_topic(topic) for topic in current_topics}
     for topic in candidates:
         key = _norm_topic(topic)
-        if key in existing:
+        if key in existing or _is_excluded_topic(topic):
             continue
         existing.add(key)
         missing.append(topic)
@@ -91,11 +98,16 @@ def _merge_unique_topics(primary: list[str], fallback: list[str]) -> list[str]:
     seen: set[str] = set()
     for topic in [*primary, *fallback]:
         key = _norm_topic(topic)
-        if not key or key in seen:
+        if not key or key in seen or _is_excluded_topic(topic):
             continue
         seen.add(key)
         result.append(topic)
     return result[:40]
+
+
+def _is_excluded_topic(value: str) -> bool:
+    normalized = _norm_topic(value)
+    return normalized in EXCLUDED_TOPIC_PHRASES
 
 
 def _norm_topic(value: str) -> str:

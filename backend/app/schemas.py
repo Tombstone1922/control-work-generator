@@ -225,3 +225,4 @@ class TrainingDatasetStats(BaseModel):
     revision_examples: int = 0
     topics_count: int = 0
     competencies_count: int = 0
+    assessment_types_count: int = 0

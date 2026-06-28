@@ -356,6 +356,53 @@
   min-height: auto;
 }
 
+.accountSettingsCard {
+  display: grid;
+  gap: 14px;
+}
+
+.accountSettingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.accountSettingsGrid label,
+.adminProfileFields label {
+  margin: 0;
+}
+
+.adminRowEditable {
+  grid-template-columns: minmax(180px, 0.85fr) minmax(360px, 1.45fr) 180px 170px;
+  align-items: end;
+}
+
+.adminIdentityBlock {
+  display: grid;
+  gap: 4px;
+}
+
+.adminProfileFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.adminProfileFields input,
+.accountSettingsGrid input {
+  min-height: 42px;
+}
+
+.adminActionGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.adminActionGroup button {
+  width: 100%;
+}
+
 .darkTheme .projectStatusDashboard,
 .darkTheme .projectStatusItem,
 .darkTheme .fosReadinessCard,
@@ -364,7 +411,8 @@
 .darkTheme .controlResultPanel span,
 .darkTheme .controlAnswerBox,
 .darkTheme .toggleLabel,
-.darkTheme .adminGearButton {
+.darkTheme .adminGearButton,
+.darkTheme .accountSettingsCard {
   border-color: rgba(164, 184, 226, 0.28);
   background: rgba(21, 34, 57, 0.82);
   color: #dbe6ff;
@@ -413,17 +461,24 @@
 @media (max-width: 1200px) {
   .historyGridThree { grid-template-columns: 1fr; }
   .projectStatusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adminRowEditable { grid-template-columns: 1fr; }
+  .adminProfileFields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .adminActionGroup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1100px) {
   .workspaceTabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fosReadinessCard { grid-template-columns: 1fr; }
+  .accountSettingsGrid { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 700px) {
   .workspaceTabs,
   .projectStatusGrid,
-  .fosReadinessGrid { grid-template-columns: 1fr; }
+  .fosReadinessGrid,
+  .accountSettingsGrid,
+  .adminProfileFields,
+  .adminActionGroup { grid-template-columns: 1fr; }
   .heroTitleRow { flex-wrap: wrap; }
   .heroTitleRow h1 { max-width: 100%; }
   .demoBankActions > button { width: 100%; }

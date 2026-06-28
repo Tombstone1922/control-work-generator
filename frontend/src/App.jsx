@@ -214,16 +214,11 @@ function App() {
   return (
     <main className="page appShell">
       <section className="hero appHero card">
-        <div>
-          <p className="eyebrow">Фонд Оценочных Средств</p>
-          <h1>Формирование ФОС по РПД</h1>
-        </div>
+        <div><p className="eyebrow">Фонд Оценочных Средств</p><h1>Формирование ФОС по РПД</h1></div>
         <div className="userBox">
           <ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} />
           <div className="userNameRow"><strong>{user.full_name}</strong><StarButton active={showAdvancedUi} onClick={() => setShowAdvancedUi((value) => !value)} /></div>
-          <span>{user.email}</span>
-          <span>Роль: {roleLabel(user.role)}</span>
-          <button className="secondary smallButton" onClick={() => logout()}>Выйти</button>
+          <span>{user.email}</span><span>Роль: {roleLabel(user.role)}</span><button className="secondary smallButton" onClick={() => logout()}>Выйти</button>
         </div>
       </section>
 
@@ -235,7 +230,6 @@ function App() {
       </nav>
 
       <ProjectStatusDashboard program={program} generationsHistory={generationsHistory} activePage={activePage} />
-
       {error && <div className="alert">{error}</div>}
       {success && <div className="success">{success}</div>}
 
@@ -256,9 +250,7 @@ function RpdAnalysisPage({ user, file, setFile, program, isUploading, uploadProg
   return <div className="workspacePage"><section className="pageIntro card"><div><p className="eyebrow">Анализ РПД</p><h2>РПД → структура дисциплины</h2><p className="muted">Здесь остается только загрузка рабочей программы дисциплины и первичный анализ: темы, компетенции, результаты обучения и качество распознавания.</p></div><div className="stepPills"><span>1. РПД</span><span>2. Анализ</span></div></section><section className="workspaceGrid">{canEdit ? <form className="card uploadCard" onSubmit={uploadProgram}><p className="eyebrow">Загрузка</p><h2>Рабочая программа дисциплины</h2><p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p><input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>{file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}</form> : <section className="card uploadCard"><p className="eyebrow">Проверка</p><h2>Материалы преподавателей</h2><p className="muted">Методист открывает РПД из истории и проверяет материалы без редактирования.</p></section>}<CurrentDocumentCard program={program} /></section>{program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}</div>;
 }
 
-function CurrentDocumentCard({ program }) {
-  return <section className="card currentDocCard"><p className="eyebrow">Текущий документ</p><h2>{program?.filename || 'РПД пока не выбрана'}</h2>{program ? <div className="docStats"><Metric value={program.topics?.length || 0} label="тем" /><Metric value={program.competencies?.length || 0} label="компетенций" /><Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество анализа РПД" /></div> : <p className="muted">Загрузите РПД во вкладке «Анализ РПД» или откройте документ из администрирования.</p>}</section>;
-}
+function CurrentDocumentCard({ program }) { return <section className="card currentDocCard"><p className="eyebrow">Текущий документ</p><h2>{program?.filename || 'РПД пока не выбрана'}</h2>{program ? <div className="docStats"><Metric value={program.topics?.length || 0} label="тем" /><Metric value={program.competencies?.length || 0} label="компетенций" /><Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество анализа РПД" /></div> : <p className="muted">Загрузите РПД во вкладке «Анализ РПД» или откройте документ из администрирования.</p>}</section>; }
 
 function ControlWorkPage({ api, program, canEdit, setError, setSuccess, loadHistory, goToRpd }) {
   const [variantsCount, setVariantsCount] = useState(2);
@@ -268,24 +260,75 @@ function ControlWorkPage({ api, program, canEdit, setError, setSuccess, loadHist
   const [generation, setGeneration] = useState(null);
   const [isGenerating, setGenerating] = useState(false);
   const [isExporting, setExporting] = useState(false);
+
   function toggleQuestionType(type) { setQuestionTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]); }
-  async function runControlGeneration(event) { event.preventDefault(); if (!program?.program_id) return setError('Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД».'); setGenerating(true); setError(''); setSuccess(''); try { const response = await api.post('/api/generation/run', { program_id: program.program_id, variants_count: Number(variantsCount), questions_per_variant: Number(questionsPerVariant), difficulty, question_types: questionTypes.length ? questionTypes : ['open'] }); setGeneration(response.data); await loadHistory(); setSuccess('Контрольная работа сформирована.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось сформировать контрольную работу.'); } finally { setGenerating(false); } }
-  async function downloadControlWork() { if (!generation?.session_id) return; setExporting(true); setError(''); try { const response = await api.get(`/api/export/docx/${generation.session_id}`, { responseType: 'blob' }); downloadBlob(response.data, `control_work_${generation.session_id.slice(0, 8)}.docx`); setSuccess('Контрольная работа скачана в DOCX.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось скачать контрольную работу.'); } finally { setExporting(false); } }
+
+  async function runControlGeneration(event) {
+    event.preventDefault();
+    if (!program?.program_id) return setError('Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД».');
+    setGenerating(true); setError(''); setSuccess('');
+    try {
+      const response = await api.post('/api/generation/run', { program_id: program.program_id, variants_count: Number(variantsCount), questions_per_variant: Number(questionsPerVariant), difficulty, question_types: questionTypes.length ? questionTypes : ['open'] });
+      setGeneration(response.data);
+      await loadHistory();
+      setSuccess('Контрольная работа сформирована.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось сформировать контрольную работу.');
+    } finally { setGenerating(false); }
+  }
+
+  async function downloadControlWork() {
+    if (!generation?.session_id) return;
+    setExporting(true); setError('');
+    try {
+      const response = await api.get(`/api/export/docx/${generation.session_id}`, { responseType: 'blob' });
+      downloadBlob(response.data, `control_work_${generation.session_id.slice(0, 8)}.docx`);
+      setSuccess('Контрольная работа скачана в DOCX.');
+    } catch (err) { setError(err.response?.data?.detail || 'Не удалось скачать контрольную работу.'); }
+    finally { setExporting(false); }
+  }
+
+  function regenerateVariant(variantNumber) {
+    if (!generation) return;
+    const pool = generation.variants.flatMap((variant) => variant.questions || []);
+    setGeneration((current) => ({
+      ...current,
+      variants: current.variants.map((variant) => variant.variant_number === variantNumber
+        ? { ...variant, questions: takeRotatedQuestions(pool, variant.questions.length, variantNumber) }
+        : variant),
+    }));
+    setSuccess(`Вариант ${variantNumber} перегенерирован.`);
+  }
+
+  function regenerateQuestion(variantNumber, questionIndex) {
+    if (!generation) return;
+    const pool = generation.variants.flatMap((variant) => variant.questions || []);
+    setGeneration((current) => ({
+      ...current,
+      variants: current.variants.map((variant) => {
+        if (variant.variant_number !== variantNumber) return variant;
+        const currentQuestion = variant.questions[questionIndex];
+        const replacement = pickReplacementQuestion(pool, currentQuestion, questionIndex);
+        return { ...variant, questions: variant.questions.map((question, index) => index === questionIndex ? replacement : question) };
+      }),
+    }));
+    setSuccess(`Задание ${questionIndex + 1} в варианте ${variantNumber} перегенерировано.`);
+  }
+
   if (!program) return <EmptyState title="Контрольная работа" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД»." actionText="Перейти к анализу РПД" onAction={goToRpd} />;
   const totalQuestions = generation?.quality_report?.total_questions || 0;
   const duplicateRate = generation?.quality_report?.duplicate_rate || 0;
   const variantsReady = generation?.variants?.length || 0;
-  return <div className="controlWorkPage"><section className="pageIntro card"><div><p className="eyebrow">Контрольная</p><h2>Генерация контрольных работ</h2><p className="muted">Отдельный сценарий для быстрого формирования вариантов контрольной работы по темам загруженной РПД.</p></div><div className="stepPills"><span>{program.topics?.length || 0} тем</span><span>{program.competencies?.length || 0} компетенции</span></div></section><section className="card workflow"><form onSubmit={runControlGeneration}><div className="miniGrid"><label>Вариантов<input type="number" min="1" max="20" value={variantsCount} onChange={(event) => setVariantsCount(event.target.value)} /></label><label>Заданий в варианте<input type="number" min="1" max="50" value={questionsPerVariant} onChange={(event) => setQuestionsPerVariant(event.target.value)} /></label><label>Сложность<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div><div className="questionTypeRow"><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('open')} onChange={() => toggleQuestionType('open')} />Открытые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('test')} onChange={() => toggleQuestionType('test')} />Тестовые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('practice')} onChange={() => toggleQuestionType('practice')} />Практические задания</label></div><button className="primary" disabled={isGenerating || !canEdit}>{isGenerating ? 'Формируем контрольную...' : 'Сформировать контрольную'}</button></form></section>{generation ? <section className="card"><div className="sectionHeader controlResultHeader"><div><p className="eyebrow">Результат генерации</p><h2>Контрольная работа</h2><div className="controlResultPanel"><span><strong>{totalQuestions}</strong><small>заданий</small></span><span><strong>{duplicateRate}%</strong><small>дубли</small></span><span><strong>{variantsReady}</strong><small>вариантов</small></span><span><strong>{questionsPerVariant}</strong><small>в варианте</small></span></div></div><button className="download" type="button" onClick={downloadControlWork} disabled={isExporting}>{isExporting ? 'Формируем DOCX...' : 'Скачать контрольную'}</button></div><div className="variants">{generation.variants.map((variant) => <ControlVariantCard key={variant.variant_number} variant={variant} />)}</div></section> : <section className="card"><p className="muted">Контрольная еще не сформирована. Настройте параметры и нажмите кнопку генерации.</p></section>}</div>;
+
+  return <div className="controlWorkPage"><section className="pageIntro card"><div><p className="eyebrow">Контрольная</p><h2>Генерация контрольных работ</h2><p className="muted">Отдельный сценарий для быстрого формирования вариантов контрольной работы по темам загруженной РПД.</p></div><div className="stepPills"><span>{program.topics?.length || 0} тем</span><span>{program.competencies?.length || 0} компетенции</span></div></section><section className="card workflow"><form onSubmit={runControlGeneration}><div className="miniGrid"><label>Вариантов<input type="number" min="1" max="20" value={variantsCount} onChange={(event) => setVariantsCount(event.target.value)} /></label><label>Заданий в варианте<input type="number" min="1" max="50" value={questionsPerVariant} onChange={(event) => setQuestionsPerVariant(event.target.value)} /></label><label>Сложность<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div><div className="questionTypeRow"><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('open')} onChange={() => toggleQuestionType('open')} />Открытые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('test')} onChange={() => toggleQuestionType('test')} />Тестовые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('practice')} onChange={() => toggleQuestionType('practice')} />Практические задания</label></div><button className="primary" disabled={isGenerating || !canEdit}>{isGenerating ? 'Формируем контрольную...' : 'Сформировать контрольную'}</button></form></section>{generation ? <section className="card"><div className="sectionHeader controlResultHeader"><div><p className="eyebrow">Результат генерации</p><h2>Контрольная работа</h2><div className="controlResultPanel"><span><strong>{totalQuestions}</strong><small>заданий</small></span><span><strong>{duplicateRate}%</strong><small>дубли</small></span><span><strong>{variantsReady}</strong><small>вариантов</small></span><span><strong>{questionsPerVariant}</strong><small>в варианте</small></span></div></div><button className="download" type="button" onClick={downloadControlWork} disabled={isExporting}>{isExporting ? 'Формируем DOCX...' : 'Скачать контрольную'}</button></div><div className="variants">{generation.variants.map((variant) => <ControlVariantCard key={variant.variant_number} variant={variant} onRegenerateVariant={regenerateVariant} onRegenerateQuestion={regenerateQuestion} />)}</div></section> : <section className="card"><p className="muted">Контрольная еще не сформирована. Настройте параметры и нажмите кнопку генерации.</p></section>}</div>;
 }
 
-function ControlVariantCard({ variant }) { return <article className="variant"><h3>Вариант {variant.variant_number}</h3>{variant.questions.map((question, index) => <div className="question" key={question.id}><strong>{index + 1}. {question.topic}</strong><p>{question.text}</p>{question.answer && <div className="controlAnswerBox"><strong>Ответ по существу:</strong><p>{question.answer}</p></div>}<small>{questionTypeLabel(question.type)} · {difficultyLabel(question.difficulty)}</small></div>)}</article>; }
+function ControlVariantCard({ variant, onRegenerateVariant, onRegenerateQuestion }) {
+  return <article className="variant"><div className="variantHeader"><h3>Вариант {variant.variant_number}</h3><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateVariant(variant.variant_number)}>Перегенерировать вариант</button></div>{variant.questions.map((question, index) => <div className="question" key={`${question.id}-${index}`}><div className="questionTitleRow"><strong>{index + 1}. {question.topic}</strong><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateQuestion(variant.variant_number, index)}>Перегенерировать</button></div><p>{question.text}</p>{question.answer && <div className="controlAnswerBox"><strong>Эталонный ответ:</strong><p>{question.answer}</p></div>}<small>{questionTypeLabel(question.type)} · {difficultyLabel(question.difficulty)}</small></div>)}</article>;
+}
+
 function FosPage({ api, program, user, setError, setSuccess, goToRpd }) { if (!program) return <EmptyState title="ФОС" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД». После этого здесь появится структура ФОС и банк заданий." actionText="Перейти к анализу РПД" onAction={goToRpd} />; return <div className="fosPage"><section className="pageIntro card"><div><p className="eyebrow">ФОС</p><h2>Формирование ФОС и банка заданий</h2><p className="muted">Здесь находится вся генерация ФОС: структура, разделы, интеллектуальный генератор 2.0, банк заданий, проверка и экспорт.</p></div><div className="stepPills"><span>1. Структура</span><span>2. Генерация</span><span>3. Банк</span><span>4. Экспорт</span></div></section><CurrentDocumentCard program={program} /><AssessmentFundPanel api={api} program={program} user={user} setError={setError} setSuccess={setSuccess} /></div>; }
-
-function AdministrationPage({ user, api, program, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openProgramForDemo, adminUsers, updateAdminUserRole, toggleAdminUser, showAdvancedUi, toggleAdvancedUi, setError, setSuccess }) {
-  const assessmentGenerations = generationsHistory.filter(isAssessmentMaterialGeneration);
-  const controlGenerations = generationsHistory.filter((item) => !isAssessmentMaterialGeneration(item));
-  return <div className="adminPage"><section className="pageIntro card adminIntro"><div><p className="eyebrow">Администрирование защиты</p><h2>Набор заданий и рабочий режим</h2><p className="muted">Для защиты ВКР заранее набиваем банк заданий под выбранную РПД, а затем показываем рабочий режим, где задания открываются практически сразу.</p></div></section>{showAdvancedUi && <section className="adminDashboard"><DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} /><section className="card systemCard"><p className="eyebrow">Текущая РПД</p><h2>{program?.filename || 'РПД не выбрана'}</h2><p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p></section></section>}<section className="card historyCard"><div className="sectionHeader"><div><h2>История работы</h2><p className="muted">Ранее загруженные РПД и сгенерированные материалы.</p></div><button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button></div><div className="historyGrid historyGridThree"><HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество анализа РПД {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgram(item.program_id, 'rpd')} /><HistoryList title="Генерации оценочных материалов" items={assessmentGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} элементов ФОС</span></>} onOpen={(item) => openProgram(item.program_id, 'fos')} /><HistoryList title="Генерации контрольных работ" items={controlGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id, 'control')} /></div></section>{user.role === 'admin' && <AdminPanel users={adminUsers} currentUser={user} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}</div>;
-}
+function AdministrationPage({ user, api, program, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openProgramForDemo, adminUsers, updateAdminUserRole, toggleAdminUser, showAdvancedUi, toggleAdvancedUi, setError, setSuccess }) { const assessmentGenerations = generationsHistory.filter(isAssessmentMaterialGeneration); const controlGenerations = generationsHistory.filter((item) => !isAssessmentMaterialGeneration(item)); return <div className="adminPage"><section className="pageIntro card adminIntro"><div><p className="eyebrow">Администрирование защиты</p><h2>Набор заданий и рабочий режим</h2><p className="muted">Для защиты ВКР заранее набиваем банк заданий под выбранную РПД, а затем показываем рабочий режим, где задания открываются практически сразу.</p></div></section>{showAdvancedUi && <section className="adminDashboard"><DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} /><section className="card systemCard"><p className="eyebrow">Текущая РПД</p><h2>{program?.filename || 'РПД не выбрана'}</h2><p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p></section></section>}<section className="card historyCard"><div className="sectionHeader"><div><h2>История работы</h2><p className="muted">Ранее загруженные РПД и сгенерированные материалы.</p></div><button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button></div><div className="historyGrid historyGridThree"><HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество анализа РПД {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgram(item.program_id, 'rpd')} /><HistoryList title="Генерации оценочных материалов" items={assessmentGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} элементов ФОС</span></>} onOpen={(item) => openProgram(item.program_id, 'fos')} /><HistoryList title="Генерации контрольных работ" items={controlGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id, 'control')} /></div></section>{user.role === 'admin' && <AdminPanel users={adminUsers} currentUser={user} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} updateRole={updateAdminUserRole} toggleUser={toggleAdminUser} />}</div>; }
 
 function EmptyState({ title, text, actionText, onAction }) { return <section className="card emptyState"><p className="eyebrow">{title}</p><h2>РПД не выбрана</h2><p className="muted">{text}</p>{onAction && <button className="primary" type="button" onClick={onAction}>{actionText}</button>}</section>; }
 function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) { return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>; }
@@ -301,5 +344,8 @@ function roleChangeMessage(role) { return ({ teacher: 'Права пользов
 function questionTypeLabel(type) { return ({ open: 'открытый вопрос', test: 'тест', practice: 'практика' }[type] || type); }
 function difficultyLabel(value) { return ({ easy: 'базовая', medium: 'средняя', hard: 'повышенная' }[value] || value); }
 function downloadBlob(data, filename) { const url = window.URL.createObjectURL(new Blob([data])); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url); }
+function takeRotatedQuestions(pool, count, seed = 1) { const unique = [...pool]; if (!unique.length) return []; const offset = seed % unique.length; return Array.from({ length: count }, (_, index) => cloneQuestion(unique[(offset + index) % unique.length], `variant-${seed}-${Date.now()}-${index}`)); }
+function pickReplacementQuestion(pool, currentQuestion, index) { const candidates = pool.filter((item) => item.id !== currentQuestion?.id && item.topic !== currentQuestion?.topic); const source = candidates[index % Math.max(candidates.length, 1)] || pool.find((item) => item.id !== currentQuestion?.id) || currentQuestion; return cloneQuestion(source, `question-${Date.now()}-${index}`); }
+function cloneQuestion(question, id) { return { ...question, id: id || `${question?.id || 'q'}-${Date.now()}` }; }
 
 export default App;

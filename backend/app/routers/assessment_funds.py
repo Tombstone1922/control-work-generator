@@ -46,11 +46,13 @@ def create_fund(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentFundResponse:
-    require_teacher_or_admin(current_user)
+    if not (is_teacher(current_user) or is_reviewer(current_user)):
+        require_teacher_or_admin(current_user)
     program = get_program_entity_for_user(db, payload.program_id, current_user)
     if program is None:
         raise HTTPException(status_code=404, detail="РПД не найдена или нет доступа.")
-    ensure_can_edit_program_content(current_user, program)
+    if is_teacher(current_user) and not is_admin(current_user):
+        ensure_can_edit_program_content(current_user, program)
 
     try:
         source_text = extract_text(program.file_path)
@@ -109,9 +111,9 @@ def update_fund(
             ensure_can_edit_fund_content(current_user, fund_entity)
     elif is_reviewer(current_user):
         if content_changed:
-            raise HTTPException(status_code=403, detail="Методист проверяет ФОС, но не редактирует структуру и задания преподавателя.")
-        if payload.status is None:
-            raise HTTPException(status_code=403, detail="Методист может менять только статус проверки ФОС.")
+            ensure_can_edit_fund_content(current_user, fund_entity)
+        if payload.status is None and not content_changed:
+            raise HTTPException(status_code=403, detail="Нет данных для изменения ФОС.")
     else:
         raise HTTPException(status_code=403, detail="Недостаточно прав для изменения ФОС.")
 

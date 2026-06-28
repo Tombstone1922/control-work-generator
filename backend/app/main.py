@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-from app.database import init_db
+from app import models
+from app.assessment_item_validation import AssessmentItemsValidation
+from app.database import get_db, init_db
+from app.repositories_assessment_items import get_fund_entity_for_user, list_items_for_user
 from app.routers import (
     admin,
     assessment_funds,
@@ -18,6 +22,8 @@ from app.routers import (
     reference_materials,
     training_examples,
 )
+from app.security import get_current_user
+from app.services.assessment_item_validator import validate_assessment_items
 
 app = FastAPI(title="Control Work Generator API", version="1.0.0")
 
@@ -40,6 +46,22 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+
+
+@app.post("/api/assessment-items/{fund_id}/validate", response_model=AssessmentItemsValidation)
+def validate_items_without_blocking_generation(
+    fund_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AssessmentItemsValidation:
+    try:
+        fund = get_fund_entity_for_user(db, fund_id, current_user)
+        items = list_items_for_user(db, fund_id, current_user)
+        if fund is None or items is None:
+            return AssessmentItemsValidation(warnings=["ФОС не найден или нет доступа."])
+        return validate_assessment_items(fund, items)
+    except Exception:
+        return AssessmentItemsValidation(warnings=["Проверка банка заданий пропущена, генерация ФОС не прервана."])
 
 
 app.include_router(auth.router)

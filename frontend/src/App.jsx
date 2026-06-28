@@ -12,10 +12,7 @@ const ADVANCED_UI_KEY = 'control_work_generator_advanced_ui';
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem(USER_KEY);
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState(() => { const stored = localStorage.getItem(USER_KEY); return stored ? JSON.parse(stored) : null; });
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
   const [showAdvancedUi, setShowAdvancedUi] = useState(() => localStorage.getItem(ADVANCED_UI_KEY) === 'enabled');
   const [activePage, setActivePage] = useState('rpd');
@@ -33,646 +30,130 @@ function App() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const api = useMemo(() => axios.create({
-    baseURL: API_URL,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  }), [token]);
-
+  const api = useMemo(() => axios.create({ baseURL: API_URL, headers: token ? { Authorization: `Bearer ${token}` } : {} }), [token]);
   const canEditWorkspace = user?.role === 'teacher' || user?.role === 'admin';
   const isDarkTheme = theme === 'dark';
 
-  useEffect(() => {
-    document.body.dataset.theme = theme;
-    document.body.classList.toggle('darkTheme', theme === 'dark');
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem(ADVANCED_UI_KEY, showAdvancedUi ? 'enabled' : 'disabled');
-  }, [showAdvancedUi]);
-
+  useEffect(() => { document.body.dataset.theme = theme; document.body.classList.toggle('darkTheme', theme === 'dark'); localStorage.setItem(THEME_KEY, theme); }, [theme]);
+  useEffect(() => { localStorage.setItem(ADVANCED_UI_KEY, showAdvancedUi ? 'enabled' : 'disabled'); }, [showAdvancedUi]);
   useEffect(() => {
     if (!token) return;
-    api.get('/api/auth/me')
-      .then(async (response) => {
-        setUser(response.data);
-        localStorage.setItem(USER_KEY, JSON.stringify(response.data));
-        await loadHistory();
-        if (response.data.role === 'admin') await loadAdminUsers();
-        else setAdminUsers([]);
-      })
-      .catch(() => logout(false));
+    api.get('/api/auth/me').then(async (response) => {
+      setUser(response.data); localStorage.setItem(USER_KEY, JSON.stringify(response.data));
+      await loadHistory();
+      if (response.data.role === 'admin') await loadAdminUsers(); else setAdminUsers([]);
+    }).catch(() => logout(false));
   }, [token]);
 
-  function switchPage(page) {
-    setOpenedFromStorage(false);
-    setActivePage(page);
-  }
-
-  function toggleTheme() {
-    setTheme((current) => current === 'dark' ? 'light' : 'dark');
-  }
+  function switchPage(page) { setOpenedFromStorage(false); setActivePage(page); }
+  function toggleTheme() { setTheme((current) => current === 'dark' ? 'light' : 'dark'); }
 
   async function submitAuth(event) {
-    event.preventDefault();
-    setError('');
-    setSuccess('');
+    event.preventDefault(); setError(''); setSuccess('');
     try {
       const url = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const payload = authMode === 'login'
-        ? { email: authForm.email, password: authForm.password }
-        : authForm;
+      const payload = authMode === 'login' ? { email: authForm.email, password: authForm.password } : authForm;
       const response = await axios.post(`${API_URL}${url}`, payload);
-      setToken(response.data.access_token);
-      setUser(response.data.user);
-      localStorage.setItem(TOKEN_KEY, response.data.access_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.data.user));
+      setToken(response.data.access_token); setUser(response.data.user);
+      localStorage.setItem(TOKEN_KEY, response.data.access_token); localStorage.setItem(USER_KEY, JSON.stringify(response.data.user));
       setSuccess(authMode === 'login' ? 'Вход выполнен.' : 'Пользователь зарегистрирован.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Ошибка авторизации.');
-    }
+    } catch (err) { setError(err.response?.data?.detail || 'Ошибка авторизации.'); }
   }
 
   function logout(showMessage = true) {
-    setToken('');
-    setUser(null);
-    setProgram(null);
-    setProgramsHistory([]);
-    setGenerationsHistory([]);
-    setAdminUsers([]);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    setToken(''); setUser(null); setProgram(null); setProgramsHistory([]); setGenerationsHistory([]); setAdminUsers([]);
+    localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY);
     if (showMessage) setSuccess('Вы вышли из системы.');
   }
 
   async function loadHistory() {
     if (!token) return;
     setHistoryLoading(true);
-    try {
-      const [programsResponse, generationsResponse] = await Promise.all([
-        api.get('/api/programs/'),
-        api.get('/api/generation/'),
-      ]);
-      setProgramsHistory(programsResponse.data);
-      setGenerationsHistory(generationsResponse.data);
-    } catch (err) {
-      console.warn('Не удалось загрузить историю:', err);
-    } finally {
-      setHistoryLoading(false);
-    }
+    try { const [programsResponse, generationsResponse] = await Promise.all([api.get('/api/programs/'), api.get('/api/generation/')]); setProgramsHistory(programsResponse.data); setGenerationsHistory(generationsResponse.data); }
+    catch (err) { console.warn('Не удалось загрузить историю:', err); }
+    finally { setHistoryLoading(false); }
   }
 
-  async function loadAdminUsers() {
-    try {
-      const response = await api.get('/api/admin/users');
-      setAdminUsers(response.data);
-    } catch (err) {
-      console.warn('Не удалось загрузить пользователей:', err);
-    }
-  }
+  async function loadAdminUsers() { try { const response = await api.get('/api/admin/users'); setAdminUsers(response.data); } catch (err) { console.warn('Не удалось загрузить пользователей:', err); } }
 
   async function uploadProgram(event) {
     event.preventDefault();
     if (!canEditWorkspace) return setError('Загрузка РПД доступна преподавателю или администратору.');
     if (!file) return setError('Выберите файл РПД в формате DOCX, PDF или TXT.');
-    setError('');
-    setSuccess('');
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const response = await api.post('/api/programs/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setProgram(response.data);
-      setOpenedFromStorage(false);
-      setActivePage('rpd');
-      await loadHistory();
-      setSuccess('РПД успешно загружена и проанализирована.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось загрузить и проанализировать РПД.');
-    } finally {
-      setUploading(false);
-    }
+    setError(''); setSuccess(''); setUploading(true);
+    try { const formData = new FormData(); formData.append('file', file); const response = await api.post('/api/programs/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }); setProgram(response.data); setOpenedFromStorage(false); setActivePage('rpd'); await loadHistory(); setSuccess('РПД успешно загружена и проанализирована.'); }
+    catch (err) { setError(err.response?.data?.detail || 'Не удалось загрузить и проанализировать РПД.'); }
+    finally { setUploading(false); }
   }
 
   async function reanalyzeProgram() {
     if (!program?.program_id || !canEditWorkspace) return;
-    setError('');
-    setSuccess('');
-    setReanalyzing(true);
-    try {
-      const response = await api.post(`/api/programs/${program.program_id}/reanalyze`);
-      setProgram(response.data);
-      await loadHistory();
-      setSuccess('РПД повторно проанализирована.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось повторно проанализировать РПД.');
-    } finally {
-      setReanalyzing(false);
-    }
+    setError(''); setSuccess(''); setReanalyzing(true);
+    try { const response = await api.post(`/api/programs/${program.program_id}/reanalyze`); setProgram(response.data); await loadHistory(); setSuccess('РПД повторно проанализирована.'); }
+    catch (err) { setError(err.response?.data?.detail || 'Не удалось повторно проанализировать РПД.'); }
+    finally { setReanalyzing(false); }
   }
 
-  async function openProgram(programId, targetPage = 'rpd', options = {}) {
-    setError('');
-    setSuccess('');
-    try {
-      const response = await api.get(`/api/programs/${programId}`);
-      setProgram(response.data);
-      setOpenedFromStorage(Boolean(options.fromStorage && targetPage === 'fos'));
-      setActivePage(targetPage);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось открыть РПД из истории.');
-    }
-  }
-
-  async function openProgramForDemo(programId) {
-    setError('');
-    setSuccess('');
-    try {
-      const response = await api.get(`/api/programs/${programId}`);
-      setProgram(response.data);
-      setOpenedFromStorage(false);
-      setActivePage('administration');
-      setSuccess('РПД выбрана для набора заданий и рабочего режима.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось открыть РПД.');
-    }
-  }
+  async function openProgram(programId, targetPage = 'rpd', options = {}) { setError(''); setSuccess(''); try { const response = await api.get(`/api/programs/${programId}`); setProgram(response.data); setOpenedFromStorage(Boolean(options.fromStorage && targetPage === 'fos')); setActivePage(targetPage); } catch (err) { setError(err.response?.data?.detail || 'Не удалось открыть РПД из истории.'); } }
+  async function openProgramForDemo(programId) { setError(''); setSuccess(''); try { const response = await api.get(`/api/programs/${programId}`); setProgram(response.data); setOpenedFromStorage(false); setActivePage('administration'); setSuccess('РПД выбрана для набора заданий и рабочего режима.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось открыть РПД.'); } }
 
   async function updateMyAccount(payload) {
-    const cleanPayload = cleanProfilePayload(payload);
-    if (!Object.keys(cleanPayload).length) return setError('Заполните хотя бы одно поле для изменения аккаунта.');
-    setError('');
-    setSuccess('');
-    try {
-      const response = await api.patch('/api/auth/me', cleanPayload);
-      setToken(response.data.access_token);
-      setUser(response.data.user);
-      localStorage.setItem(TOKEN_KEY, response.data.access_token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.data.user));
-      if (response.data.user.role === 'admin') await loadAdminUsers();
-      setSuccess('Данные аккаунта обновлены.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось обновить данные аккаунта.');
-    }
+    const cleanPayload = cleanProfilePayload(payload); if (!Object.keys(cleanPayload).length) return setError('Заполните хотя бы одно поле для изменения аккаунта.');
+    setError(''); setSuccess('');
+    try { const response = await api.patch('/api/auth/me', cleanPayload); setToken(response.data.access_token); setUser(response.data.user); localStorage.setItem(TOKEN_KEY, response.data.access_token); localStorage.setItem(USER_KEY, JSON.stringify(response.data.user)); if (response.data.user.role === 'admin') await loadAdminUsers(); setSuccess('Данные аккаунта обновлены.'); }
+    catch (err) { setError(err.response?.data?.detail || 'Не удалось обновить данные аккаунта.'); }
   }
 
-  async function updateAdminUserRole(userId, role) {
-    try {
-      const response = await api.patch(`/api/admin/users/${userId}/role`, { role });
-      await loadAdminUsers();
-      if (user?.id === userId) updateStoredUser(response.data);
-      setSuccess(roleChangeMessage(role));
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось изменить роль.');
-    }
+  async function createAdminUser(payload) {
+    const cleanPayload = cleanProfilePayload(payload); cleanPayload.role = payload.role || 'teacher';
+    if (!cleanPayload.full_name || !cleanPayload.email || !cleanPayload.password) return setError('Заполните ФИО, email и пароль нового пользователя.');
+    setError(''); setSuccess('');
+    try { await api.post('/api/admin/users', cleanPayload); await loadAdminUsers(); setSuccess('Пользователь добавлен.'); }
+    catch (err) { setError(err.response?.data?.detail || 'Не удалось добавить пользователя.'); }
   }
 
-  async function updateAdminUserProfile(userId, payload) {
-    const cleanPayload = cleanProfilePayload(payload);
-    if (!Object.keys(cleanPayload).length) return setError('Заполните ФИО, логин или новый пароль.');
-    setError('');
-    setSuccess('');
-    try {
-      const response = await api.patch(`/api/admin/users/${userId}/profile`, cleanPayload);
-      await loadAdminUsers();
-      if (user?.id === userId) updateStoredUser(response.data);
-      setSuccess('Данные пользователя обновлены.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось изменить данные пользователя.');
-    }
-  }
+  async function updateAdminUserRole(userId, role) { try { const response = await api.patch(`/api/admin/users/${userId}/role`, { role }); await loadAdminUsers(); if (user?.id === userId) updateStoredUser(response.data); setSuccess(roleChangeMessage(role)); } catch (err) { setError(err.response?.data?.detail || 'Не удалось изменить роль.'); } }
+  async function updateAdminUserProfile(userId, payload) { const cleanPayload = cleanProfilePayload(payload); if (!Object.keys(cleanPayload).length) return setError('Заполните ФИО, логин или новый пароль.'); setError(''); setSuccess(''); try { const response = await api.patch(`/api/admin/users/${userId}/profile`, cleanPayload); await loadAdminUsers(); if (user?.id === userId) updateStoredUser(response.data); setSuccess('Данные пользователя обновлены.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось изменить данные пользователя.'); } }
+  async function toggleAdminUser(userId, isActive) { try { await api.patch(`/api/admin/users/${userId}/active`, { is_active: !isActive }); await loadAdminUsers(); setSuccess(isActive ? 'Пользователь заблокирован.' : 'Пользователь разблокирован.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось изменить состояние пользователя.'); } }
+  function updateStoredUser(nextUser) { setUser(nextUser); localStorage.setItem(USER_KEY, JSON.stringify(nextUser)); }
 
-  async function toggleAdminUser(userId, isActive) {
-    try {
-      await api.patch(`/api/admin/users/${userId}/active`, { is_active: !isActive });
-      await loadAdminUsers();
-      setSuccess(isActive ? 'Пользователь заблокирован.' : 'Пользователь разблокирован.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось изменить состояние пользователя.');
-    }
-  }
+  if (!user) return <AuthScreen authMode={authMode} setAuthMode={setAuthMode} authForm={authForm} setAuthForm={setAuthForm} submitAuth={submitAuth} error={error} success={success} />;
 
-  function updateStoredUser(nextUser) {
-    setUser(nextUser);
-    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-  }
-
-  if (!user) {
-    return (
-      <AuthScreen
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authForm={authForm}
-        setAuthForm={setAuthForm}
-        submitAuth={submitAuth}
-        error={error}
-        success={success}
-      />
-    );
-  }
-
-  return (
-    <main className="page appShell">
-      <section className="hero appHero card">
-        <div className="heroTitleBlock">
-          <p className="eyebrow">Фонд Оценочных Средств</p>
-          <div className="heroTitleRow">
-            <h1>Формирование контрольных работ и ФОС</h1>
-            {user.role === 'admin' && (
-              <button
-                className={activePage === 'user-admin' ? 'adminGearButton adminGearButtonActive' : 'adminGearButton'}
-                type="button"
-                onClick={() => switchPage('user-admin')}
-                title="Администрирование пользователей"
-                aria-label="Администрирование пользователей"
-              >
-                ⚙
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="userBox">
-          <ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} />
-          <div className="userNameRow">
-            <strong>{user.full_name}</strong>
-            <StarButton active={showAdvancedUi} onClick={() => setShowAdvancedUi((value) => !value)} />
-          </div>
-          <span>{user.email}</span>
-          <span>Роль: {roleLabel(user.role)}</span>
-          <button className="secondary smallButton" onClick={() => logout()}>Выйти</button>
-        </div>
-      </section>
-
-      <nav className="appNav workspaceTabs card" aria-label="Основные разделы">
-        <WorkspaceTab active={activePage === 'rpd'} onClick={() => switchPage('rpd')} title="Анализ РПД" subtitle="Загрузка, темы, компетенции" />
-        <WorkspaceTab active={activePage === 'control'} onClick={() => switchPage('control')} title="Контрольная" subtitle="Генерация контрольных работ" />
-        <WorkspaceTab active={activePage === 'fos'} onClick={() => switchPage('fos')} title="ФОС" subtitle="Банк заданий, OM/ФОС, экспорт" />
-        <WorkspaceTab active={activePage === 'administration'} onClick={() => switchPage('administration')} title="Хранилище" subtitle="История, утверждение, доработки" />
-      </nav>
-
-      <ProjectStatusDashboard program={program} generationsHistory={generationsHistory} activePage={activePage} />
-      {error && <div className="alert">{error}</div>}
-      {success && <div className="success">{success}</div>}
-
-      {activePage === 'rpd' && (
-        <RpdAnalysisPage
-          user={user}
-          file={file}
-          setFile={setFile}
-          program={program}
-          isUploading={isUploading}
-          uploadProgram={uploadProgram}
-          isReanalyzing={isReanalyzing}
-          reanalyzeProgram={reanalyzeProgram}
-        />
-      )}
-
-      {activePage === 'control' && (
-        <ControlWorkPage
-          api={api}
-          program={program}
-          canEdit={canEditWorkspace}
-          setError={setError}
-          setSuccess={setSuccess}
-          loadHistory={loadHistory}
-          goToRpd={() => switchPage('rpd')}
-        />
-      )}
-
-      {activePage === 'fos' && (
-        <FosPage
-          api={api}
-          program={program}
-          user={user}
-          openedFromStorage={openedFromStorage}
-          setError={setError}
-          setSuccess={setSuccess}
-          goToRpd={() => switchPage('rpd')}
-        />
-      )}
-
-      {activePage === 'administration' && (
-        <AdministrationPage
-          api={api}
-          program={program}
-          programsHistory={programsHistory}
-          generationsHistory={generationsHistory}
-          loadHistory={loadHistory}
-          isHistoryLoading={isHistoryLoading}
-          openProgram={openProgram}
-          openProgramForDemo={openProgramForDemo}
-          showAdvancedUi={showAdvancedUi}
-          setError={setError}
-          setSuccess={setSuccess}
-        />
-      )}
-
-      {activePage === 'user-admin' && user.role === 'admin' && (
-        <UserAdministrationPage
-          users={adminUsers}
-          currentUser={user}
-          showAdvancedUi={showAdvancedUi}
-          toggleAdvancedUi={() => setShowAdvancedUi((value) => !value)}
-          updateMyAccount={updateMyAccount}
-          updateRole={updateAdminUserRole}
-          updateProfile={updateAdminUserProfile}
-          toggleUser={toggleAdminUser}
-        />
-      )}
-    </main>
-  );
+  return <main className="page appShell"><section className="hero appHero card"><div className="heroTitleBlock"><p className="eyebrow">Фонд Оценочных Средств</p><div className="heroTitleRow"><h1>Формирование контрольных работ и ФОС</h1><button className={activePage === 'user-admin' ? 'adminGearButton adminGearButtonActive' : 'adminGearButton'} type="button" onClick={() => switchPage('user-admin')} title="Настройки аккаунта" aria-label="Настройки аккаунта">⚙</button></div></div><div className="userBox"><ThemeToggle isDark={isDarkTheme} onToggle={toggleTheme} /><div className="userNameRow"><strong>{user.full_name}</strong><StarButton active={showAdvancedUi} onClick={() => setShowAdvancedUi((value) => !value)} /></div><span>{user.email}</span><span>Роль: {roleLabel(user.role)}</span><button className="secondary smallButton" onClick={() => logout()}>Выйти</button></div></section>
+    <nav className="appNav workspaceTabs card" aria-label="Основные разделы"><WorkspaceTab active={activePage === 'rpd'} onClick={() => switchPage('rpd')} title="Анализ РПД" subtitle="Загрузка, темы, компетенции" /><WorkspaceTab active={activePage === 'control'} onClick={() => switchPage('control')} title="Контрольная" subtitle="Генерация контрольных работ" /><WorkspaceTab active={activePage === 'fos'} onClick={() => switchPage('fos')} title="ФОС" subtitle="Банк заданий, OM/ФОС, экспорт" /><WorkspaceTab active={activePage === 'administration'} onClick={() => switchPage('administration')} title="Хранилище" subtitle="История, утверждение, доработки" /></nav>
+    <ProjectStatusDashboard program={program} generationsHistory={generationsHistory} activePage={activePage} />{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}
+    {activePage === 'rpd' && <RpdAnalysisPage user={user} file={file} setFile={setFile} program={program} isUploading={isUploading} uploadProgram={uploadProgram} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}
+    {activePage === 'control' && <ControlWorkPage api={api} program={program} canEdit={canEditWorkspace} setError={setError} setSuccess={setSuccess} loadHistory={loadHistory} goToRpd={() => switchPage('rpd')} />}
+    {activePage === 'fos' && <FosPage api={api} program={program} user={user} openedFromStorage={openedFromStorage} setError={setError} setSuccess={setSuccess} goToRpd={() => switchPage('rpd')} />}
+    {activePage === 'administration' && <AdministrationPage api={api} program={program} programsHistory={programsHistory} generationsHistory={generationsHistory} loadHistory={loadHistory} isHistoryLoading={isHistoryLoading} openProgram={openProgram} openProgramForDemo={openProgramForDemo} showAdvancedUi={showAdvancedUi} setError={setError} setSuccess={setSuccess} />}
+    {activePage === 'user-admin' && <UserAdministrationPage users={adminUsers} currentUser={user} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={() => setShowAdvancedUi((value) => !value)} createUser={createAdminUser} updateMyAccount={updateMyAccount} updateRole={updateAdminUserRole} updateProfile={updateAdminUserProfile} toggleUser={toggleAdminUser} />}
+  </main>;
 }
 
-function WorkspaceTab({ active, onClick, title, subtitle }) {
-  return <button className={active ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={onClick}><span>{title}</span><small>{subtitle}</small></button>;
-}
-
-function ThemeToggle({ isDark, onToggle }) {
-  return <button className={`themeToggle ${isDark ? 'themeToggleDark' : ''}`} type="button" onClick={onToggle} aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}><span className="themeToggleTrack"><span className="themeIcon themeSun">☀</span><span className="themeIcon themeMoon">☾</span><span className="themeToggleThumb" /></span><strong>{isDark ? 'Тёмная' : 'Светлая'}</strong></button>;
-}
-
-function StarButton({ active, onClick }) {
-  return <button className={`starToggle ${active ? 'starToggleActive' : ''}`} type="button" onClick={onClick} title={active ? 'Скрыть служебные панели' : 'Показать служебные панели'}>★</button>;
-}
-
-function RpdAnalysisPage({ user, file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram }) {
-  const canEdit = user.role === 'teacher' || user.role === 'admin';
-  return (
-    <div className="workspacePage">
-      <section className="pageIntro card"><div><p className="eyebrow">Анализ РПД</p><h2>РПД → структура дисциплины</h2><p className="muted">Здесь остается только загрузка рабочей программы дисциплины и первичный анализ: темы, компетенции, результаты обучения и качество распознавания.</p></div><div className="stepPills"><span>1. РПД</span><span>2. Анализ</span></div></section>
-      <section className="workspaceGrid">
-        {canEdit ? (
-          <form className="card uploadCard" onSubmit={uploadProgram}>
-            <p className="eyebrow">Загрузка</p><h2>Рабочая программа дисциплины</h2><p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p>
-            <input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            <button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>
-            {file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}
-          </form>
-        ) : (
-          <section className="card uploadCard"><p className="eyebrow">Проверка</p><h2>Материалы преподавателей</h2><p className="muted">Методист открывает РПД из истории и проверяет материалы без редактирования.</p></section>
-        )}
-        <CurrentDocumentCard program={program} />
-      </section>
-      {program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}
-    </div>
-  );
-}
-
-function CurrentDocumentCard({ program }) {
-  return (
-    <section className="card currentDocCard">
-      <p className="eyebrow">Текущий документ</p>
-      <h2>{program?.filename || 'РПД пока не выбрана'}</h2>
-      {program ? <div className="docStats"><Metric value={program.topics?.length || 0} label="тем" /><Metric value={program.competencies?.length || 0} label="компетенций" /><Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество анализа РПД" /></div> : <p className="muted">Загрузите РПД во вкладке «Анализ РПД» или откройте документ из хранилища.</p>}
-    </section>
-  );
-}
-
-function ControlWorkPage({ api, program, canEdit, setError, setSuccess, loadHistory, goToRpd }) {
-  const [variantsCount, setVariantsCount] = useState(2);
-  const [questionsPerVariant, setQuestionsPerVariant] = useState(5);
-  const [difficulty, setDifficulty] = useState('medium');
-  const [questionTypes, setQuestionTypes] = useState(['open', 'practice']);
-  const [generation, setGeneration] = useState(null);
-  const [isGenerating, setGenerating] = useState(false);
-  const [isExporting, setExporting] = useState(false);
-
-  function toggleQuestionType(type) {
-    setQuestionTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
-  }
-
-  async function runControlGeneration(event) {
-    event.preventDefault();
-    if (!program?.program_id) return setError('Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД».');
-    setGenerating(true); setError(''); setSuccess('');
-    try {
-      const response = await api.post('/api/generation/run', {
-        program_id: program.program_id,
-        variants_count: Number(variantsCount),
-        questions_per_variant: Number(questionsPerVariant),
-        difficulty,
-        question_types: questionTypes.length ? questionTypes : ['open'],
-      });
-      setGeneration(normalizeControlGeneration(response.data));
-      await loadHistory();
-      setSuccess('Контрольная работа сформирована.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось сформировать контрольную работу.');
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function downloadControlWork() {
-    if (!generation?.session_id) return;
-    setExporting(true); setError('');
-    try {
-      const response = await api.get(`/api/export/docx/${generation.session_id}`, { responseType: 'blob' });
-      downloadBlob(response.data, `control_work_${generation.session_id.slice(0, 8)}.docx`);
-      setSuccess('Контрольная работа скачана в DOCX.');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось скачать контрольную работу.');
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  function regenerateVariant(variantNumber) {
-    if (!generation) return;
-    const pool = generation.variants.flatMap((variant) => variant.questions || []);
-    setGeneration((current) => ({ ...current, variants: current.variants.map((variant) => variant.variant_number === variantNumber ? { ...variant, questions: takeRotatedQuestions(pool, variant.questions.length, variantNumber) } : variant) }));
-    setSuccess(`Вариант ${variantNumber} перегенерирован.`);
-  }
-
-  function regenerateQuestion(variantNumber, questionIndex) {
-    if (!generation) return;
-    const pool = generation.variants.flatMap((variant) => variant.questions || []);
-    setGeneration((current) => ({
-      ...current,
-      variants: current.variants.map((variant) => {
-        if (variant.variant_number !== variantNumber) return variant;
-        const currentQuestion = variant.questions[questionIndex];
-        const replacement = pickReplacementQuestion(pool, currentQuestion, questionIndex);
-        return { ...variant, questions: variant.questions.map((question, index) => index === questionIndex ? replacement : question) };
-      }),
-    }));
-    setSuccess(`Задание ${questionIndex + 1} в варианте ${variantNumber} перегенерировано.`);
-  }
-
-  if (!program) return <EmptyState title="Контрольная работа" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД»." actionText="Перейти к анализу РПД" onAction={goToRpd} />;
-
-  const totalQuestions = generation?.quality_report?.total_questions || 0;
-  const duplicateRate = calculateControlDuplicateRate(generation);
-  const variantsReady = generation?.variants?.length || 0;
-
-  return (
-    <div className="controlWorkPage">
-      <section className="pageIntro card"><div><p className="eyebrow">Контрольная</p><h2>Генерация контрольных работ</h2><p className="muted">Отдельный сценарий для быстрого формирования вариантов контрольной работы по темам загруженной РПД.</p></div><div className="stepPills"><span>{program.topics?.length || 0} тем</span><span>{program.competencies?.length || 0} компетенции</span></div></section>
-      <section className="card workflow"><form onSubmit={runControlGeneration}><div className="miniGrid"><label>Вариантов<input type="number" min="1" max="20" value={variantsCount} onChange={(event) => setVariantsCount(event.target.value)} /></label><label>Заданий в варианте<input type="number" min="1" max="50" value={questionsPerVariant} onChange={(event) => setQuestionsPerVariant(event.target.value)} /></label><label>Сложность<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div><div className="questionTypeRow"><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('open')} onChange={() => toggleQuestionType('open')} />Открытые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('test')} onChange={() => toggleQuestionType('test')} />Тестовые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('practice')} onChange={() => toggleQuestionType('practice')} />Практические задания</label></div><button className="primary" disabled={isGenerating || !canEdit}>{isGenerating ? 'Формируем контрольную...' : 'Сформировать контрольную'}</button></form></section>
-      {generation ? <section className="card"><div className="sectionHeader controlResultHeader"><div><p className="eyebrow">Результат генерации</p><h2>Контрольная работа</h2><div className="controlResultPanel"><span><strong>{totalQuestions}</strong><small>заданий</small></span><span><strong>{duplicateRate}%</strong><small>дублей</small></span><span><strong>{variantsReady}</strong><small>вариантов</small></span><span><strong>{questionsPerVariant}</strong><small>в варианте</small></span></div></div><button className="download" type="button" onClick={downloadControlWork} disabled={isExporting}>{isExporting ? 'Формируем DOCX...' : 'Скачать контрольную'}</button></div><div className="variants">{generation.variants.map((variant) => <ControlVariantCard key={variant.variant_number} variant={variant} onRegenerateVariant={regenerateVariant} onRegenerateQuestion={regenerateQuestion} />)}</div></section> : <section className="card"><p className="muted">Контрольная еще не сформирована. Настройте параметры и нажмите кнопку генерации.</p></section>}
-    </div>
-  );
-}
-
-function ControlVariantCard({ variant, onRegenerateVariant, onRegenerateQuestion }) {
-  return <article className="variant"><div className="variantHeader"><h3>Вариант {variant.variant_number}</h3><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateVariant(variant.variant_number)}>Перегенерировать вариант</button></div>{variant.questions.map((question, index) => <div className="question" key={`${question.id}-${index}`}><div className="questionTitleRow"><strong>{index + 1}. {question.topic}</strong><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateQuestion(variant.variant_number, index)}>Перегенерировать</button></div><p>{question.text}</p>{question.answer && <div className="controlAnswerBox"><strong>Эталонный ответ:</strong><p>{question.answer}</p></div>}<small>{questionTypeLabel(question.type)} · {difficultyLabel(question.difficulty)}</small></div>)}</article>;
-}
-
-function FosPage({ api, program, user, openedFromStorage, setError, setSuccess, goToRpd }) {
-  if (!program) return <EmptyState title="ФОС" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД». После этого здесь появится структура ФОС и банк заданий." actionText="Перейти к анализу РПД" onAction={goToRpd} />;
-  return <div className="fosPage"><section className="pageIntro card"><div><p className="eyebrow">ФОС</p><h2>Формирование ФОС и банка заданий</h2><p className="muted">Здесь находится вся генерация ФОС: структура, разделы, интеллектуальный генератор 2.0, банк заданий, проверка и экспорт.</p></div><div className="stepPills"><span>1. Структура</span><span>2. Генерация</span><span>3. Банк</span><span>4. Экспорт</span></div></section><CurrentDocumentCard program={program} /><AssessmentFundPanel api={api} program={program} user={user} openedFromStorage={openedFromStorage} setError={setError} setSuccess={setSuccess} /></div>;
-}
-
-function AdministrationPage({ api, program, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openProgramForDemo, showAdvancedUi, setError, setSuccess }) {
-  const assessmentGenerations = generationsHistory.filter(isAssessmentMaterialGeneration);
-  const controlGenerations = generationsHistory.filter((item) => !isAssessmentMaterialGeneration(item));
-  const revisionItems = buildFosRevisionItems(programsHistory, assessmentGenerations);
-  const approvedFosItems = buildApprovedFosItems(programsHistory, assessmentGenerations);
-
-  return (
-    <div className="adminPage">
-      <section className="pageIntro card adminIntro"><div><p className="eyebrow">Хранилище</p><h2>История генераций и утверждения</h2><p className="muted">Здесь собрана история РПД, генераций контрольных работ, оценочных материалов, доработок ФОС и утвержденных фондов.</p></div></section>
-      {showAdvancedUi && (
-        <section className="adminDashboard"><DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} /><section className="card systemCard"><p className="eyebrow">Текущая РПД</p><h2>{program?.filename || 'РПД не выбрана'}</h2><p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p></section></section>
-      )}
-      {showAdvancedUi && (
-        <section className="card historyCard"><div className="sectionHeader"><div><h2>История генераций и утверждения</h2><p className="muted">Ранее загруженные РПД, сформированные оценочные материалы и контрольные работы.</p></div><button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button></div><div className="historyGrid historyGridThree"><HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество анализа РПД {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgram(item.program_id, 'rpd')} /><HistoryList title="Генерации оценочных материалов" items={assessmentGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} элементов ФОС</span></>} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} /><HistoryList title="Генерации контрольных работ" items={controlGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id, 'control')} /></div></section>
-      )}
-      <FosRevisionBlock items={revisionItems} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} />
-      <ApprovedFosBlock items={approvedFosItems} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} />
-    </div>
-  );
-}
-
-function FosRevisionBlock({ items, onOpen }) {
-  return <section className="card historyCard"><div className="sectionHeader"><div><h2>Элементы доработки ФОС</h2><p className="muted">Фиксация замечаний, проверки структуры, критериев и антидублей перед утверждением ФОС.</p></div></div><div className="historyItems">{items.length ? items.map((item) => <button className="historyItem" key={item.id} onClick={() => onOpen(item)}><strong>{item.title}</strong><span>{item.status} · {item.details}</span></button>) : <p className="muted">Пока нет элементов доработки.</p>}</div></section>;
-}
-
-function ApprovedFosBlock({ items, onOpen }) {
-  return <section className="card historyCard"><div className="sectionHeader"><div><h2>Утвержденные ФОС</h2><p className="muted">После доработок здесь хранится список утвержденных фондов оценочных средств по РПД.</p></div></div><div className="historyItems">{items.length ? items.map((item) => <button className="historyItem" key={item.id} onClick={() => onOpen(item)}><strong>{item.title}</strong><span>{item.status} · {item.details}</span></button>) : <p className="muted">Утвержденные ФОС пока не зафиксированы.</p>}</div></section>;
-}
-
-function UserAdministrationPage({ users, currentUser, showAdvancedUi, toggleAdvancedUi, updateMyAccount, updateRole, updateProfile, toggleUser }) {
-  return (
-    <div className="adminPage">
-      <section className="pageIntro card adminIntro"><div><p className="eyebrow">Пользователи</p><h2>Администрирование пользователей</h2><p className="muted">Управление аккаунтом, логином, паролем и ролями пользователей вынесено в отдельную вкладку по кнопке-шестеренке.</p></div></section>
-      <SelfAccountPanel user={currentUser} onSave={updateMyAccount} />
-      <AdminPanel users={users} currentUser={currentUser} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} updateRole={updateRole} updateProfile={updateProfile} toggleUser={toggleUser} />
-    </div>
-  );
-}
-
-function SelfAccountPanel({ user, onSave }) {
-  const [form, setForm] = useState({ full_name: user.full_name, email: user.email, password: '' });
-  useEffect(() => setForm({ full_name: user.full_name, email: user.email, password: '' }), [user.id, user.full_name, user.email]);
-
-  return (
-    <section className="card accountSettingsCard">
-      <div className="sectionHeader"><div><h2>Данные текущего аккаунта</h2><p className="muted">Здесь можно изменить логин, ФИО и пароль активного администратора.</p></div></div>
-      <div className="accountSettingsGrid">
-        <label>ФИО<input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} /></label>
-        <label>Логин / email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
-        <label>Новый пароль<input type="password" value={form.password} placeholder="Оставьте пустым, если не меняете" onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
-        <button className="primary" type="button" onClick={() => onSave(form)}>Сохранить данные аккаунта</button>
-      </div>
-    </section>
-  );
-}
-
-function EmptyState({ title, text, actionText, onAction }) {
-  return <section className="card emptyState"><p className="eyebrow">{title}</p><h2>РПД не выбрана</h2><p className="muted">{text}</p>{onAction && <button className="primary" type="button" onClick={onAction}>{actionText}</button>}</section>;
-}
-
-function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) {
-  return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>;
-}
-
-function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) {
-  const diagnostics = program.analysis_report?.diagnostics || {};
-  return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div>{canEdit && <button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button>}</div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div></section>;
-}
-
+function WorkspaceTab({ active, onClick, title, subtitle }) { return <button className={active ? 'navTab activeNavTab' : 'navTab'} type="button" onClick={onClick}><span>{title}</span><small>{subtitle}</small></button>; }
+function ThemeToggle({ isDark, onToggle }) { return <button className={`themeToggle ${isDark ? 'themeToggleDark' : ''}`} type="button" onClick={onToggle} aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}><span className="themeToggleTrack"><span className="themeIcon themeSun">☀</span><span className="themeIcon themeMoon">☾</span><span className="themeToggleThumb" /></span><strong>{isDark ? 'Тёмная' : 'Светлая'}</strong></button>; }
+function StarButton({ active, onClick }) { return <button className={`starToggle ${active ? 'starToggleActive' : ''}`} type="button" onClick={onClick} title={active ? 'Скрыть служебные панели' : 'Показать служебные панели'}>★</button>; }
+function RpdAnalysisPage({ user, file, setFile, program, isUploading, uploadProgram, isReanalyzing, reanalyzeProgram }) { const canEdit = user.role === 'teacher' || user.role === 'admin'; return <div className="workspacePage"><section className="pageIntro card"><div><p className="eyebrow">Анализ РПД</p><h2>РПД → структура дисциплины</h2><p className="muted">Здесь остается только загрузка рабочей программы дисциплины и первичный анализ: темы, компетенции, результаты обучения и качество распознавания.</p></div><div className="stepPills"><span>1. РПД</span><span>2. Анализ</span></div></section><section className="workspaceGrid">{canEdit ? <form className="card uploadCard" onSubmit={uploadProgram}><p className="eyebrow">Загрузка</p><h2>Рабочая программа дисциплины</h2><p className="muted">DOCX, PDF или TXT. После загрузки система выделит темы, компетенции и результаты обучения.</p><input className="fileInput" type="file" accept=".docx,.pdf,.txt" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button className="primary" disabled={isUploading}>{isUploading ? 'Анализируем...' : 'Загрузить и проанализировать'}</button>{file && <p className="muted selectedFile">Выбран файл: <strong>{file.name}</strong></p>}</form> : <section className="card uploadCard"><p className="eyebrow">Проверка</p><h2>Материалы преподавателей</h2><p className="muted">Методист открывает РПД из истории и проверяет материалы без редактирования.</p></section>}<CurrentDocumentCard program={program} /></section>{program && <ProgramAnalysisSection program={program} canEdit={canEdit} isReanalyzing={isReanalyzing} reanalyzeProgram={reanalyzeProgram} />}</div>; }
+function CurrentDocumentCard({ program }) { return <section className="card currentDocCard"><p className="eyebrow">Текущий документ</p><h2>{program?.filename || 'РПД пока не выбрана'}</h2>{program ? <div className="docStats"><Metric value={program.topics?.length || 0} label="тем" /><Metric value={program.competencies?.length || 0} label="компетенций" /><Metric value={`${program.analysis_report?.diagnostics?.quality_score || 0}%`} label="качество анализа РПД" /></div> : <p className="muted">Загрузите РПД во вкладке «Анализ РПД» или откройте документ из хранилища.</p>}</section>; }
+function ControlWorkPage({ api, program, canEdit, setError, setSuccess, loadHistory, goToRpd }) { const [variantsCount, setVariantsCount] = useState(2); const [questionsPerVariant, setQuestionsPerVariant] = useState(5); const [difficulty, setDifficulty] = useState('medium'); const [questionTypes, setQuestionTypes] = useState(['open', 'practice']); const [generation, setGeneration] = useState(null); const [isGenerating, setGenerating] = useState(false); const [isExporting, setExporting] = useState(false); function toggleQuestionType(type) { setQuestionTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]); } async function runControlGeneration(event) { event.preventDefault(); if (!program?.program_id) return setError('Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД».'); setGenerating(true); setError(''); setSuccess(''); try { const response = await api.post('/api/generation/run', { program_id: program.program_id, variants_count: Number(variantsCount), questions_per_variant: Number(questionsPerVariant), difficulty, question_types: questionTypes.length ? questionTypes : ['open'] }); setGeneration(normalizeControlGeneration(response.data)); await loadHistory(); setSuccess('Контрольная работа сформирована.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось сформировать контрольную работу.'); } finally { setGenerating(false); } } async function downloadControlWork() { if (!generation?.session_id) return; setExporting(true); setError(''); try { const response = await api.get(`/api/export/docx/${generation.session_id}`, { responseType: 'blob' }); downloadBlob(response.data, `control_work_${generation.session_id.slice(0, 8)}.docx`); setSuccess('Контрольная работа скачана в DOCX.'); } catch (err) { setError(err.response?.data?.detail || 'Не удалось скачать контрольную работу.'); } finally { setExporting(false); } } function regenerateVariant(variantNumber) { if (!generation) return; const pool = generation.variants.flatMap((variant) => variant.questions || []); setGeneration((current) => ({ ...current, variants: current.variants.map((variant) => variant.variant_number === variantNumber ? { ...variant, questions: takeRotatedQuestions(pool, variant.questions.length, variantNumber) } : variant) })); setSuccess(`Вариант ${variantNumber} перегенерирован.`); } function regenerateQuestion(variantNumber, questionIndex) { if (!generation) return; const pool = generation.variants.flatMap((variant) => variant.questions || []); setGeneration((current) => ({ ...current, variants: current.variants.map((variant) => { if (variant.variant_number !== variantNumber) return variant; const currentQuestion = variant.questions[questionIndex]; const replacement = pickReplacementQuestion(pool, currentQuestion, questionIndex); return { ...variant, questions: variant.questions.map((question, index) => index === questionIndex ? replacement : question) }; }) })); setSuccess(`Задание ${questionIndex + 1} в варианте ${variantNumber} перегенерировано.`); } if (!program) return <EmptyState title="Контрольная работа" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД»." actionText="Перейти к анализу РПД" onAction={goToRpd} />; const totalQuestions = generation?.quality_report?.total_questions || 0; const duplicateRate = calculateControlDuplicateRate(generation); const variantsReady = generation?.variants?.length || 0; return <div className="controlWorkPage"><section className="pageIntro card"><div><p className="eyebrow">Контрольная</p><h2>Генерация контрольных работ</h2><p className="muted">Отдельный сценарий для быстрого формирования вариантов контрольной работы по темам загруженной РПД.</p></div><div className="stepPills"><span>{program.topics?.length || 0} тем</span><span>{program.competencies?.length || 0} компетенции</span></div></section><section className="card workflow"><form onSubmit={runControlGeneration}><div className="miniGrid"><label>Вариантов<input type="number" min="1" max="20" value={variantsCount} onChange={(event) => setVariantsCount(event.target.value)} /></label><label>Заданий в варианте<input type="number" min="1" max="50" value={questionsPerVariant} onChange={(event) => setQuestionsPerVariant(event.target.value)} /></label><label>Сложность<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div><div className="questionTypeRow"><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('open')} onChange={() => toggleQuestionType('open')} />Открытые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('test')} onChange={() => toggleQuestionType('test')} />Тестовые вопросы</label><label className="toggleLabel"><input type="checkbox" checked={questionTypes.includes('practice')} onChange={() => toggleQuestionType('practice')} />Практические задания</label></div><button className="primary" disabled={isGenerating || !canEdit}>{isGenerating ? 'Формируем контрольную...' : 'Сформировать контрольную'}</button></form></section>{generation ? <section className="card"><div className="sectionHeader controlResultHeader"><div><p className="eyebrow">Результат генерации</p><h2>Контрольная работа</h2><div className="controlResultPanel"><span><strong>{totalQuestions}</strong><small>заданий</small></span><span><strong>{duplicateRate}%</strong><small>дублей</small></span><span><strong>{variantsReady}</strong><small>вариантов</small></span><span><strong>{questionsPerVariant}</strong><small>в варианте</small></span></div></div><button className="download" type="button" onClick={downloadControlWork} disabled={isExporting}>{isExporting ? 'Формируем DOCX...' : 'Скачать контрольную'}</button></div><div className="variants">{generation.variants.map((variant) => <ControlVariantCard key={variant.variant_number} variant={variant} onRegenerateVariant={regenerateVariant} onRegenerateQuestion={regenerateQuestion} />)}</div></section> : <section className="card"><p className="muted">Контрольная еще не сформирована. Настройте параметры и нажмите кнопку генерации.</p></section>}</div>; }
+function ControlVariantCard({ variant, onRegenerateVariant, onRegenerateQuestion }) { return <article className="variant"><div className="variantHeader"><h3>Вариант {variant.variant_number}</h3><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateVariant(variant.variant_number)}>Перегенерировать вариант</button></div>{variant.questions.map((question, index) => <div className="question" key={`${question.id}-${index}`}><div className="questionTitleRow"><strong>{index + 1}. {question.topic}</strong><button className="secondary miniRegenButton" type="button" onClick={() => onRegenerateQuestion(variant.variant_number, index)}>Перегенерировать</button></div><p>{question.text}</p>{question.answer && <div className="controlAnswerBox"><strong>Эталонный ответ:</strong><p>{question.answer}</p></div>}<small>{questionTypeLabel(question.type)} · {difficultyLabel(question.difficulty)}</small></div>)}</article>; }
+function FosPage({ api, program, user, openedFromStorage, setError, setSuccess, goToRpd }) { if (!program) return <EmptyState title="ФОС" text="Сначала загрузите и проанализируйте РПД во вкладке «Анализ РПД». После этого здесь появится структура ФОС и банк заданий." actionText="Перейти к анализу РПД" onAction={goToRpd} />; return <div className="fosPage"><section className="pageIntro card"><div><p className="eyebrow">ФОС</p><h2>Формирование ФОС и банка заданий</h2><p className="muted">Здесь находится вся генерация ФОС: структура, разделы, интеллектуальный генератор 2.0, банк заданий, проверка и экспорт.</p></div><div className="stepPills"><span>1. Структура</span><span>2. Генерация</span><span>3. Банк</span><span>4. Экспорт</span></div></section><CurrentDocumentCard program={program} /><AssessmentFundPanel api={api} program={program} user={user} openedFromStorage={openedFromStorage} setError={setError} setSuccess={setSuccess} /></div>; }
+function AdministrationPage({ api, program, programsHistory, generationsHistory, loadHistory, isHistoryLoading, openProgram, openProgramForDemo, showAdvancedUi, setError, setSuccess }) { const assessmentGenerations = generationsHistory.filter(isAssessmentMaterialGeneration); const controlGenerations = generationsHistory.filter((item) => !isAssessmentMaterialGeneration(item)); const revisionItems = buildFosRevisionItems(programsHistory, assessmentGenerations); const approvedFosItems = buildApprovedFosItems(programsHistory, assessmentGenerations); return <div className="adminPage"><section className="pageIntro card adminIntro"><div><p className="eyebrow">Хранилище</p><h2>История генераций и утверждения</h2><p className="muted">Здесь собрана история РПД, генераций контрольных работ, оценочных материалов, доработок ФОС и утвержденных фондов.</p></div></section>{showAdvancedUi && <section className="adminDashboard"><DemoBankPanel api={api} program={program} setError={setError} setSuccess={setSuccess} /><section className="card systemCard"><p className="eyebrow">Текущая РПД</p><h2>{program?.filename || 'РПД не выбрана'}</h2><p className="muted">Выберите РПД из истории ниже, затем откройте “Набор заданий” или “Рабочий режим”.</p></section></section>}{showAdvancedUi && <section className="card historyCard"><div className="sectionHeader"><div><h2>История генераций и утверждения</h2><p className="muted">Ранее загруженные РПД, сформированные оценочные материалы и контрольные работы.</p></div><button className="secondary" onClick={loadHistory}>{isHistoryLoading ? 'Обновляем...' : 'Обновить'}</button></div><div className="historyGrid historyGridThree"><HistoryList title="РПД" items={programsHistory} getKey={(item) => item.program_id} renderItem={(item) => <><strong>{item.filename}</strong><span>{item.topics.length} тем · качество анализа РПД {item.analysis_report?.diagnostics?.quality_score || 0}%</span></>} onOpen={(item) => openProgram(item.program_id, 'rpd')} /><HistoryList title="Генерации оценочных материалов" items={assessmentGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} элементов ФОС</span></>} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} /><HistoryList title="Генерации контрольных работ" items={controlGenerations} getKey={(item) => item.session_id} renderItem={(item) => <><strong>{item.session_id.slice(0, 8)}...</strong><span>{statusLabel(item.status)} · {item.quality_report.total_questions} заданий</span></>} onOpen={(item) => openProgram(item.program_id, 'control')} /></div></section>}<FosRevisionBlock items={revisionItems} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} /><ApprovedFosBlock items={approvedFosItems} onOpen={(item) => openProgram(item.program_id, 'fos', { fromStorage: true })} /></div>; }
+function FosRevisionBlock({ items, onOpen }) { return <section className="card historyCard"><div className="sectionHeader"><div><h2>Элементы доработки ФОС</h2><p className="muted">Фиксация замечаний, проверки структуры, критериев и антидублей перед утверждением ФОС.</p></div></div><div className="historyItems">{items.length ? items.map((item) => <button className="historyItem" key={item.id} onClick={() => onOpen(item)}><strong>{item.title}</strong><span>{item.status} · {item.details}</span></button>) : <p className="muted">Пока нет элементов доработки.</p>}</div></section>; }
+function ApprovedFosBlock({ items, onOpen }) { return <section className="card historyCard"><div className="sectionHeader"><div><h2>Утвержденные ФОС</h2><p className="muted">После доработок здесь хранится список утвержденных фондов оценочных средств по РПД.</p></div></div><div className="historyItems">{items.length ? items.map((item) => <button className="historyItem" key={item.id} onClick={() => onOpen(item)}><strong>{item.title}</strong><span>{item.status} · {item.details}</span></button>) : <p className="muted">Утвержденные ФОС пока не зафиксированы.</p>}</div></section>; }
+function UserAdministrationPage({ users, currentUser, showAdvancedUi, toggleAdvancedUi, createUser, updateMyAccount, updateRole, updateProfile, toggleUser }) { return <div className="adminPage"><section className="pageIntro card adminIntro"><div><p className="eyebrow">Настройки</p><h2>{currentUser.role === 'admin' ? 'Администрирование пользователей' : 'Настройки аккаунта'}</h2><p className="muted">Настройки доступны всем ролям. Изменять пароли других пользователей может только администратор.</p></div></section><SelfAccountPanel user={currentUser} onSave={updateMyAccount} />{currentUser.role === 'admin' && <AdminPanel users={users} currentUser={currentUser} showAdvancedUi={showAdvancedUi} toggleAdvancedUi={toggleAdvancedUi} createUser={createUser} updateRole={updateRole} updateProfile={updateProfile} toggleUser={toggleUser} />}</div>; }
+function SelfAccountPanel({ user, onSave }) { const [form, setForm] = useState({ full_name: user.full_name, email: user.email, password: '' }); useEffect(() => setForm({ full_name: user.full_name, email: user.email, password: '' }), [user.id, user.full_name, user.email]); return <section className="card accountSettingsCard"><div className="sectionHeader"><div><h2>Данные текущего аккаунта</h2><p className="muted">Здесь можно изменить свой логин, ФИО и пароль.</p></div></div><div className="accountSettingsGrid"><label>ФИО<input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} /></label><label>Логин / email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label>Новый пароль<input type="password" value={form.password} placeholder="Оставьте пустым, если не меняете" onChange={(event) => setForm({ ...form, password: event.target.value })} /></label><button className="primary" type="button" onClick={() => onSave(form)}>Сохранить данные аккаунта</button></div></section>; }
+function EmptyState({ title, text, actionText, onAction }) { return <section className="card emptyState"><p className="eyebrow">{title}</p><h2>РПД не выбрана</h2><p className="muted">{text}</p>{onAction && <button className="primary" type="button" onClick={onAction}>{actionText}</button>}</section>; }
+function AuthScreen({ authMode, setAuthMode, authForm, setAuthForm, submitAuth, error, success }) { return <main className="page authPage"><section className="authCard card"><p className="eyebrow">Фонд Оценочных Средств</p><h1>Генератор контрольных работ</h1>{error && <div className="alert">{error}</div>}{success && <div className="success">{success}</div>}<div className="authTabs"><button className={authMode === 'login' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('login')}>Вход</button><button className={authMode === 'register' ? 'primary' : 'secondary'} type="button" onClick={() => setAuthMode('register')}>Регистрация</button></div><form onSubmit={submitAuth}>{authMode === 'register' && <label>ФИО<input value={authForm.full_name} onChange={(event) => setAuthForm({ ...authForm, full_name: event.target.value })} required /></label>}<label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} required /></label><label>Пароль<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} required /></label><button className="primary">{authMode === 'login' ? 'Войти' : 'Создать пользователя'}</button></form></section></main>; }
+function ProgramAnalysisSection({ program, canEdit, isReanalyzing, reanalyzeProgram }) { const diagnostics = program.analysis_report?.diagnostics || {}; return <section className="card"><div className="sectionHeader"><div><h2>Результаты анализа РПД</h2><p className="muted">Структурированный отчет показывает, какие элементы документа удалось выделить автоматически.</p></div>{canEdit && <button className="secondary" type="button" onClick={reanalyzeProgram} disabled={isReanalyzing}>{isReanalyzing ? 'Анализируем...' : 'Повторить анализ'}</button>}</div><div className="diagnosticsGrid"><Metric value={`${diagnostics.quality_score || 0}%`} label="Качество распознавания" /><Metric value={diagnostics.topics_count || 0} label="Темы" /><Metric value={diagnostics.competencies_count || 0} label="Компетенции" /><Metric value={diagnostics.learning_outcomes_count || 0} label="Результаты обучения" /><Metric value={diagnostics.detected_sections_count || 0} label="Разделы документа" /><Metric value={diagnostics.ignored_lines || 0} label="Отфильтровано строк" /></div>{diagnostics.warnings?.length > 0 && <div className="notice"><strong>Предупреждения анализатора</strong><ul>{diagnostics.warnings.map((item) => <li key={item}>{item}</li>)}</ul></div>}<div className="columns"><List title="Темы" items={program.topics} /><List title="Компетенции" items={program.competencies} /><List title="Результаты обучения" items={program.learning_outcomes} /></div></section>; }
 function Metric({ value, label }) { return <div className="metric"><strong>{value}</strong><span>{label}</span></div>; }
 function List({ title, items }) { return <div><h3>{title}</h3>{items.length ? <ul className="compactList">{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="muted">Не найдено</p>}</div>; }
 function HistoryList({ title, items, getKey, renderItem, onOpen }) { return <div className="historyColumn"><h3>{title}</h3>{items.length ? <div className="historyItems">{items.slice(0, 8).map((item) => <button className="historyItem" key={getKey(item)} onClick={() => onOpen(item)}>{renderItem(item)}</button>)}</div> : <p className="muted">Пока пусто</p>}</div>; }
-
-function AdminPanel({ users, currentUser, showAdvancedUi, toggleAdvancedUi, updateRole, updateProfile, toggleUser }) {
-  const [editForms, setEditForms] = useState({});
-  useEffect(() => {
-    const nextForms = {};
-    users.forEach((item) => {
-      nextForms[item.id] = {
-        full_name: item.full_name,
-        email: item.email,
-        password: '',
-      };
-    });
-    setEditForms(nextForms);
-  }, [users]);
-
-  const teachers = users.filter((item) => item.role === 'teacher').length;
-  const methodists = users.filter((item) => item.role === 'methodist').length;
-  const admins = users.filter((item) => item.role === 'admin').length;
-
-  function patchForm(userId, patch) {
-    setEditForms((current) => ({ ...current, [userId]: { ...current[userId], ...patch } }));
-  }
-
-  return (
-    <section className="card">
-      <div className="sectionHeader"><div><h2>Администрирование пользователей</h2><p className="muted">Можно менять роль, ФИО, логин/email и пароль каждого пользователя.</p></div><div className="itemBankStats"><span>Преподавателей: <strong>{teachers}</strong></span><span>Методистов: <strong>{methodists}</strong></span><span>Админов: <strong>{admins}</strong></span></div></div>
-      <div className="adminList">
-        {users.map((userItem) => {
-          const form = editForms[userItem.id] || { full_name: userItem.full_name, email: userItem.email, password: '' };
-          return (
-            <div className="adminRow adminRowEditable" key={userItem.id}>
-              <div className="adminIdentityBlock"><div className="adminNameLine"><strong>{userItem.full_name}</strong>{(userItem.id === currentUser.id || userItem.email === currentUser.email) && <StarButton active={showAdvancedUi} onClick={toggleAdvancedUi} />}</div><span>{userItem.email}</span><span>{roleLabel(userItem.role)} · {userItem.is_active ? 'активен' : 'заблокирован'}</span></div>
-              <div className="adminProfileFields"><label>ФИО<input value={form.full_name} onChange={(event) => patchForm(userItem.id, { full_name: event.target.value })} /></label><label>Логин / email<input type="email" value={form.email} onChange={(event) => patchForm(userItem.id, { email: event.target.value })} /></label><label>Новый пароль<input type="password" value={form.password} placeholder="Не менять" onChange={(event) => patchForm(userItem.id, { password: event.target.value })} /></label></div>
-              <select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select>
-              <div className="actionGroup adminActionGroup"><button className="secondary" type="button" onClick={() => updateProfile(userItem.id, form)}>Сохранить данные</button><button className="secondary" type="button" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function buildFosRevisionItems(programsHistory, assessmentGenerations) {
-  const source = assessmentGenerations.length ? assessmentGenerations : programsHistory;
-  return source.slice(0, 5).map((item, index) => {
-    const programId = item.program_id || programsHistory[index]?.program_id || '';
-    const relatedProgram = programsHistory.find((programItem) => programItem.program_id === programId) || programsHistory[index] || {};
-    const title = relatedProgram.filename || `ФОС ${String(item.session_id || index + 1).slice(0, 8)}`;
-    const statuses = ['Проверить критерии оценивания', 'Проверить полноту ответов', 'Проверить покрытие компетенций', 'Проверить антидубли'];
-    return { id: `revision-${item.session_id || item.program_id || index}`, program_id: programId, title, status: statuses[index % statuses.length], details: `${Number(item.quality_report?.total_questions || 145)} элементов ФОС` };
-  });
-}
-
-function buildApprovedFosItems(programsHistory, assessmentGenerations) {
-  const approved = assessmentGenerations.filter((item) => item.status === 'approved');
-  const source = approved.length ? approved : assessmentGenerations.slice(0, 5);
-  return source.map((item, index) => {
-    const relatedProgram = programsHistory.find((programItem) => programItem.program_id === item.program_id) || programsHistory[index] || {};
-    return { id: `approved-${item.session_id || index}`, program_id: item.program_id || relatedProgram.program_id || '', title: relatedProgram.filename || `Утвержденный ФОС ${String(item.session_id || index + 1).slice(0, 8)}`, status: item.status === 'approved' ? 'Утвержден' : 'Сохранен в хранилище', details: `${Number(item.quality_report?.total_questions || 145)} элементов · DOCX доступен из карточки ФОС` };
-  });
-}
-
-function isAssessmentMaterialGeneration(item) {
-  const total = Number(item?.quality_report?.total_questions || 0);
-  const status = String(item?.status || '').toLowerCase();
-  const comment = String(item?.review_comment || '').toLowerCase();
-  return total === 145 || status.includes('fos') || status.includes('фос') || comment.includes('фос') || comment.includes('оценоч');
-}
-
-function cleanProfilePayload(payload) {
-  const clean = {};
-  if (payload.full_name?.trim()) clean.full_name = payload.full_name.trim();
-  if (payload.email?.trim()) clean.email = payload.email.trim().toLowerCase();
-  if (payload.password?.trim()) clean.password = payload.password.trim();
-  return clean;
-}
-
+function AdminPanel({ users, currentUser, showAdvancedUi, toggleAdvancedUi, createUser, updateRole, updateProfile, toggleUser }) { const [editForms, setEditForms] = useState({}); const [newUser, setNewUser] = useState({ full_name: '', email: '', password: '', role: 'teacher' }); useEffect(() => { const nextForms = {}; users.forEach((item) => { nextForms[item.id] = { full_name: item.full_name, email: item.email, password: '' }; }); setEditForms(nextForms); }, [users]); const teachers = users.filter((item) => item.role === 'teacher').length; const methodists = users.filter((item) => item.role === 'methodist').length; const admins = users.filter((item) => item.role === 'admin').length; function patchForm(userId, patch) { setEditForms((current) => ({ ...current, [userId]: { ...current[userId], ...patch } })); } return <section className="card"><div className="sectionHeader"><div><h2>Администрирование пользователей</h2><p className="muted">Можно добавлять пользователей, менять роль, ФИО, логин/email и пароль каждого пользователя.</p></div><div className="itemBankStats"><span>Преподавателей: <strong>{teachers}</strong></span><span>Методистов: <strong>{methodists}</strong></span><span>Админов: <strong>{admins}</strong></span></div></div><section className="adminCreateUserPanel"><h3>Добавить пользователя</h3><div className="adminCreateUserGrid"><label>ФИО<input value={newUser.full_name} onChange={(event) => setNewUser({ ...newUser, full_name: event.target.value })} /></label><label>Логин / email<input type="email" value={newUser.email} onChange={(event) => setNewUser({ ...newUser, email: event.target.value })} /></label><label>Пароль<input type="password" value={newUser.password} placeholder="Минимум 6 символов" onChange={(event) => setNewUser({ ...newUser, password: event.target.value })} /></label><label>Роль<select value={newUser.role} onChange={(event) => setNewUser({ ...newUser, role: event.target.value })}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select></label><button className="primary" type="button" onClick={() => createUser(newUser)}>Добавить пользователя</button></div></section><div className="adminList">{users.map((userItem) => { const form = editForms[userItem.id] || { full_name: userItem.full_name, email: userItem.email, password: '' }; return <div className="adminRow adminRowEditable" key={userItem.id}><div className="adminIdentityBlock"><div className="adminNameLine"><strong>{userItem.full_name}</strong>{(userItem.id === currentUser.id || userItem.email === currentUser.email) && <StarButton active={showAdvancedUi} onClick={toggleAdvancedUi} />}</div><span>{userItem.email}</span><span>{roleLabel(userItem.role)} · {userItem.is_active ? 'активен' : 'заблокирован'}</span></div><div className="adminProfileFields"><label>ФИО<input value={form.full_name} onChange={(event) => patchForm(userItem.id, { full_name: event.target.value })} /></label><label>Логин / email<input type="email" value={form.email} onChange={(event) => patchForm(userItem.id, { email: event.target.value })} /></label><label>Новый пароль<input type="password" value={form.password} placeholder="Не менять" onChange={(event) => patchForm(userItem.id, { password: event.target.value })} /></label></div><select value={userItem.role} onChange={(event) => updateRole(userItem.id, event.target.value)}><option value="teacher">Преподаватель</option><option value="methodist">Методист</option><option value="admin">Администратор</option></select><div className="actionGroup adminActionGroup"><button className="secondary" type="button" onClick={() => updateProfile(userItem.id, form)}>Сохранить данные</button><button className="secondary" type="button" onClick={() => toggleUser(userItem.id, userItem.is_active)}>{userItem.is_active ? 'Заблокировать' : 'Разблокировать'}</button></div></div>; })}</div></section>; }
+function buildFosRevisionItems(programsHistory, assessmentGenerations) { const source = assessmentGenerations.length ? assessmentGenerations : programsHistory; return source.slice(0, 5).map((item, index) => { const programId = item.program_id || programsHistory[index]?.program_id || ''; const relatedProgram = programsHistory.find((programItem) => programItem.program_id === programId) || programsHistory[index] || {}; const title = relatedProgram.filename || `ФОС ${String(item.session_id || index + 1).slice(0, 8)}`; const statuses = ['Проверить критерии оценивания', 'Проверить полноту ответов', 'Проверить покрытие компетенций', 'Проверить антидубли']; return { id: `revision-${item.session_id || item.program_id || index}`, program_id: programId, title, status: statuses[index % statuses.length], details: `${Number(item.quality_report?.total_questions || 145)} элементов ФОС` }; }); }
+function buildApprovedFosItems(programsHistory, assessmentGenerations) { const approved = assessmentGenerations.filter((item) => item.status === 'approved'); const source = approved.length ? approved : assessmentGenerations.slice(0, 5); return source.map((item, index) => { const relatedProgram = programsHistory.find((programItem) => programItem.program_id === item.program_id) || programsHistory[index] || {}; return { id: `approved-${item.session_id || index}`, program_id: item.program_id || relatedProgram.program_id || '', title: relatedProgram.filename || `Утвержденный ФОС ${String(item.session_id || index + 1).slice(0, 8)}`, status: item.status === 'approved' ? 'Утвержден' : 'Сохранен в хранилище', details: `${Number(item.quality_report?.total_questions || 145)} элементов · DOCX доступен из карточки ФОС` }; }); }
+function isAssessmentMaterialGeneration(item) { const total = Number(item?.quality_report?.total_questions || 0); const status = String(item?.status || '').toLowerCase(); const comment = String(item?.review_comment || '').toLowerCase(); return total === 145 || status.includes('fos') || status.includes('фос') || comment.includes('фос') || comment.includes('оценоч'); }
+function cleanProfilePayload(payload) { const clean = {}; if (payload.full_name?.trim()) clean.full_name = payload.full_name.trim(); if (payload.email?.trim()) clean.email = payload.email.trim().toLowerCase(); if (payload.password?.trim()) clean.password = payload.password.trim(); return clean; }
 function roleLabel(role) { return ({ teacher: 'преподаватель', methodist: 'методист', admin: 'администратор' }[role] || role); }
 function statusLabel(status) { return ({ generated: 'Сформировано', in_review: 'На проверке', revision_required: 'Требует доработки', approved: 'Утверждено' }[status] || status); }
 function roleChangeMessage(role) { return ({ teacher: 'Права пользователя снижены до преподавателя.', methodist: 'Пользователь назначен методистом.', admin: 'Пользователь повышен до администратора.' }[role] || 'Роль пользователя обновлена.'); }
@@ -685,5 +166,4 @@ function cloneQuestion(question, id) { return { ...question, id: id || `${questi
 function normalizeControlGeneration(generation) { if (!generation?.variants) return generation; const pool = generation.variants.flatMap((variant) => variant.questions || []); const used = new Set(); return { ...generation, variants: generation.variants.map((variant) => ({ ...variant, questions: (variant.questions || []).map((question, index) => { const key = questionSignature(question); if (key && !used.has(key)) { used.add(key); return question; } const replacement = pool.find((candidate) => !used.has(questionSignature(candidate)) && candidate.id !== question?.id) || question; used.add(questionSignature(replacement)); return index === variant.questions.indexOf(replacement) ? replacement : cloneQuestion(replacement, `dedupe-${variant.variant_number}-${index}-${Date.now()}`); }) })) }; }
 function calculateControlDuplicateRate(generation) { const questions = generation?.variants?.flatMap((variant) => variant.questions || []) || []; if (!questions.length) return 0; const seen = new Set(); let duplicates = 0; questions.forEach((question) => { const key = questionSignature(question); if (!key) return; if (seen.has(key)) duplicates += 1; else seen.add(key); }); return Math.round((duplicates / questions.length) * 100); }
 function questionSignature(question) { return String(`${question?.topic || ''} ${question?.text || ''}`).toLowerCase().replace(/\s+/g, ' ').trim(); }
-
 export default App;

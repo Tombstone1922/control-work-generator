@@ -217,7 +217,10 @@ def _set_rfonts(element, font_name: str) -> None:
     r_pr = element.find(qn("w:rPr"))
     if r_pr is None:
         r_pr = OxmlElement("w:rPr")
-        element.insert(0, r_pr)
+        if element.tag == qn("w:r"):
+            element.insert(0, r_pr)
+        else:
+            element.append(r_pr)
     r_fonts = r_pr.find(qn("w:rFonts"))
     if r_fonts is None:
         r_fonts = OxmlElement("w:rFonts")

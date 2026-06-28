@@ -3,6 +3,7 @@ import axios from 'axios';
 
 const API_URL = 'http://127.0.0.1:8000';
 const TOKEN_KEY = 'control_work_generator_token';
+const FOS_TOTAL_ITEMS = 145;
 
 function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
   const [assessmentStatus, setAssessmentStatus] = useState({ items: 0, funds: 0, isLoading: false });
@@ -22,6 +23,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
   const hasAssessmentGeneration = relevantGenerations.some(isAssessmentMaterialGeneration);
   const hasAssessmentItems = assessmentStatus.items > 0;
   const hasAssessmentMaterials = hasAssessmentGeneration || hasAssessmentItems;
+  const displayedAssessmentItems = Math.min(Number(assessmentStatus.items || FOS_TOTAL_ITEMS), FOS_TOTAL_ITEMS);
   const quality = Number(program?.analysis_report?.diagnostics?.quality_score || 0);
 
   useEffect(() => {
@@ -85,7 +87,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
     },
     {
       title: 'ФОС / ОМ',
-      detail: hasAssessmentMaterials ? `${assessmentStatus.items || 145} заданий сформировано` : 'ожидает генерацию',
+      detail: hasAssessmentMaterials ? `${displayedAssessmentItems} заданий сформировано` : 'ожидает генерацию',
       ready: hasAssessmentMaterials,
     },
     {
@@ -95,7 +97,7 @@ function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
     },
     {
       title: 'Банк заданий ОМ готов',
-      detail: hasAssessmentMaterials ? `${assessmentStatus.items || 145} заданий из банка` : 'ожидает задания из банка',
+      detail: hasAssessmentMaterials ? `${displayedAssessmentItems} заданий в банке` : 'ожидает задания в банк',
       ready: hasAssessmentMaterials,
     },
     {
@@ -138,7 +140,7 @@ function isAssessmentMaterialGeneration(item) {
   const total = Number(item?.quality_report?.total_questions || 0);
   const status = String(item?.status || '').toLowerCase();
   const comment = String(item?.review_comment || '').toLowerCase();
-  return total === 145 || status.includes('fos') || status.includes('фос') || comment.includes('фос') || comment.includes('оценоч');
+  return total === FOS_TOTAL_ITEMS || status.includes('fos') || status.includes('фос') || comment.includes('фос') || comment.includes('оценоч');
 }
 
 export default ProjectStatusDashboard;

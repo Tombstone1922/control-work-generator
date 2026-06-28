@@ -5,8 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
-from docx.enum.section import WD_SECTION_START
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
@@ -21,7 +20,6 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 FONT_NAME = "Times New Roman"
 FONT_SIZE = Pt(14)
 BLACK = RGBColor(0, 0, 0)
-
 
 TYPE_LABELS = {
     "open": "теоретический вопрос",
@@ -39,9 +37,8 @@ DIFFICULTY_LABELS = {
 def export_generation_to_docx(generation: GenerationResponse, program: ProgramAnalysis | None = None) -> Path:
     """Export a control work as a clean printable DOCX.
 
-    The document intentionally uses Word heading styles for variants and the answer appendix,
-    so the navigation pane inside Word remains useful. All visible text is forced to
-    Times New Roman 14 pt, 1.5 spacing and black color.
+    Word heading styles are preserved for the navigation pane. All visible text is
+    forced to Times New Roman 14 pt, 1.5 spacing and black color.
     """
     document = Document()
     _configure_document(document)
@@ -72,7 +69,7 @@ def _configure_document(document: Document) -> None:
         style.font.name = FONT_NAME
         style.font.size = FONT_SIZE
         style.font.color.rgb = BLACK
-        style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT_NAME)
+        _set_rfonts(style.element, FONT_NAME)
         paragraph_format = style.paragraph_format
         paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
         paragraph_format.line_spacing = 1.5
@@ -188,6 +185,7 @@ def _add_label_value(document: Document, label: str, value: str) -> None:
 
 def _add_blank(document: Document) -> None:
     paragraph = document.add_paragraph()
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
     paragraph.paragraph_format.line_spacing = 1.5
     paragraph.paragraph_format.space_after = Pt(0)
 
@@ -212,7 +210,22 @@ def _format_run(run) -> None:
     run.font.name = FONT_NAME
     run.font.size = FONT_SIZE
     run.font.color.rgb = BLACK
-    run._element.rPr.rFonts.set(qn("w:eastAsia"), FONT_NAME)
+    _set_rfonts(run._element, FONT_NAME)
+
+
+def _set_rfonts(element, font_name: str) -> None:
+    r_pr = element.find(qn("w:rPr"))
+    if r_pr is None:
+        r_pr = OxmlElement("w:rPr")
+        element.insert(0, r_pr)
+    r_fonts = r_pr.find(qn("w:rFonts"))
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        r_pr.insert(0, r_fonts)
+    r_fonts.set(qn("w:ascii"), font_name)
+    r_fonts.set(qn("w:hAnsi"), font_name)
+    r_fonts.set(qn("w:cs"), font_name)
+    r_fonts.set(qn("w:eastAsia"), font_name)
 
 
 def _force_black_times_new_roman(document: Document) -> None:

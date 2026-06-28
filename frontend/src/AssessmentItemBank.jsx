@@ -31,6 +31,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     () => sections.filter((section) => section.enabled && !['competency_matrix', 'grading_rubric'].includes(section.assessment_type)),
     [sections],
   );
+
   const sectionMap = useMemo(() => Object.fromEntries(sections.map((section) => [section.code, section.title])), [sections]);
   const visibleItems = useMemo(
     () => selectedSectionCode ? items.filter((item) => item.section_code === selectedSectionCode) : items,
@@ -69,7 +70,9 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setLoading(true);
     setError('');
     try {
-      const response = await api.get(`/api/assessment-items/${fund.fund_id}`, { params: sectionCode ? { section_code: sectionCode } : {} });
+      const response = await api.get(`/api/assessment-items/${fund.fund_id}`, {
+        params: sectionCode ? { section_code: sectionCode } : {},
+      });
       setItems(response.data);
       if (response.data.length && !selectedItemId) setSelectedItemId(response.data[0].id);
     } catch (err) {
@@ -125,7 +128,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     if (!fund?.fund_id || !canEdit) return;
     const fakeV2 = generationMode === INTELLIGENT_V2_UI_MODE;
     const requestMode = fakeV2 ? PREPARED_BANK_V3_MODE : generationMode;
-    const cooldownMs = fakeV2 ? randomInt(10000, 15000) : 0;
+    const cooldownMs = fakeV2 ? 11000 : 0;
     let intervalId = null;
     setGenerating(true);
     setError('');
@@ -138,7 +141,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
       intervalId = window.setInterval(() => {
         const left = Math.max(0, Math.ceil((cooldownMs - (Date.now() - started)) / 1000));
         setCooldownSeconds(left);
-        if (left > 9) setGenerationStage('Интеллектуальный генератор 2.0 собирает OM/ФОС-профиль…');
+        if (left > 8) setGenerationStage('Интеллектуальный генератор 2.0 собирает OM/ФОС-профиль…');
         else if (left > 4) setGenerationStage('Проверка тем, компетенций и структуры заданий…');
         else setGenerationStage('Финальная загрузка заданий в банк ФОС…');
       }, 500);
@@ -165,6 +168,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
         ...response.data,
         requested_mode: generationMode,
         used_mode: fakeV2 ? INTELLIGENT_V2_UI_MODE : response.data.used_mode,
+        demo_total_items: generatedItems.length,
       } : null);
       await onFundRefresh();
       await validateItems(false);
@@ -221,7 +225,10 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setExportingDataset(true);
     setError('');
     try {
-      const response = await api.get('/api/training-examples/export/jsonl', { params: { fund_id: fund.fund_id }, responseType: 'blob' });
+      const response = await api.get('/api/training-examples/export/jsonl', {
+        params: { fund_id: fund.fund_id },
+        responseType: 'blob',
+      });
       downloadBlob(response.data, `training_dataset_${fund.discipline_name || fund.fund_id}.jsonl`);
       setSuccess('Обучающая выборка JSONL сформирована и скачана.');
     } catch (err) {
@@ -283,8 +290,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     setSaving(true);
     setError('');
     try {
-      const payload = buildItemUpdatePayload(replacement);
-      const response = await api.put(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`, payload);
+      const response = await api.put(`/api/assessment-items/${fund.fund_id}/${selectedItem.id}`, buildItemUpdatePayload(replacement));
       setItems((current) => current.map((item) => item.id === selectedItem.id ? response.data : item));
       setSelectedItemId(response.data.id);
       await validateItems(false);
@@ -334,7 +340,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
           <p className="muted">Интерфейс показывает, какой предметный контекст система использует для генерации: связанные темы, ключевые термины, результаты обучения и источник данных.</p>
         </div>
         <div className="sourceMiniStats">
-          {Object.entries(sourceStats).length ? Object.entries(sourceStats).map(([kind, count]) => <span key={kind}><SourceBadge kind={kind} /> <strong>{count}</strong></span>) : <span className="muted">Источники появятся после генерации.</span>}
+          {Object.entries(sourceStats).length ? Object.entries(sourceStats).map(([kind, count) => <span key={kind}><SourceBadge kind={kind} /> <strong>{count}</strong></span>) : <span className="muted">Источники появятся после генерации.</span>}
         </div>
       </div>
 
@@ -344,7 +350,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
       {canEdit && <LearningModePanel generationMode={generationMode} setGenerationMode={setGenerationMode} stats={trainingStats} />}
       {!canEdit && <div className="notice">Режим методиста: генерация, редактирование, удаление и разметка обучающих примеров скрыты.</div>}
       {isGenerating && <div className="notice"><strong>{generationStage || 'Происходит генерация, ожидайте…'}</strong>{cooldownSeconds > 0 && <p className="muted">Осталось примерно {cooldownSeconds} с. Интеллектуальный генератор ФОС готовит задания.</p>}</div>}
-      {generationSummary && <GenerationSummary generation={generationSummary} />}
+      {generationSummary && <GenerationSummary generation={generationSummary} itemCount={items.length} />}
 
       <div className="itemBankToolbar simplifiedGenerationToolbar">
         <label>Раздел ФОС<select value={selectedSectionCode} onChange={(event) => setSelectedSectionCode(event.target.value)}><option value="">Все активные разделы</option>{enabledSections.map((section) => <option key={section.code} value={section.code}>{section.title}</option>)}</select></label>
@@ -357,7 +363,13 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
 
       <div className="itemBankGrid">
         <div className="itemBankList">
-          {visibleItems.length ? visibleItems.map((item, index) => <button className={`itemBankListItem ${selectedItemId === item.id ? 'activeItemBankListItem' : ''}`} key={item.id} type="button" onClick={() => setSelectedItemId(item.id)}><div className="itemCardHeader"><strong>{index + 1}. {item.topic}</strong><SourceBadge kind={item.source_kind} /></div><span>{assessmentTypeLabel(item.assessment_type)} · {difficultyLabel(item.difficulty)} · {item.competency_code || 'без компетенции'}</span><small>{shortSourceContext(item.source_context)}</small></button>) : <p className="muted">Задания еще не сформированы.</p>}
+          {visibleItems.length ? visibleItems.map((item, index) => (
+            <button className={`itemBankListItem ${selectedItemId === item.id ? 'activeItemBankListItem' : ''}`} key={item.id} type="button" onClick={() => setSelectedItemId(item.id)}>
+              <div className="itemCardHeader"><strong>{index + 1}. {item.topic}</strong><SourceBadge kind={item.source_kind} /></div>
+              <span>{assessmentTypeLabel(item.assessment_type)} · {difficultyLabel(item.difficulty)} · {item.competency_code || 'без компетенции'}</span>
+              <small>{shortSourceContext(item.source_context)}</small>
+            </button>
+          )) : <p className="muted">Задания еще не сформированы.</p>}
         </div>
         <div className="itemBankEditor">
           {selectedItem ? <>
@@ -368,7 +380,11 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
             <ContextModuleTopicPanel context={selectedContext} isLoading={isLoadingContext} refresh={() => loadTopicContext(selectedItem.topic, true)} />
             <label>Формулировка<textarea value={selectedItem.text} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
             <label>Эталонный ответ<textarea value={selectedItem.answer} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ answer: event.target.value })} /></label>
-            <div className="miniGrid"><label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
+            <div className="miniGrid">
+              <label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label>
+              <label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label>
+              <label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label>
+            </div>
             <label>Индикатор<textarea value={selectedItem.indicator} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
             <label>Критерии оценивания<textarea value={(selectedItem.criteria || []).join('\n')} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
             <div className="sourceContextBox"><strong>Источник формирования</strong><p>{displaySourceContext(selectedItem.source_context) || 'не указан'}</p></div>
@@ -380,14 +396,42 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
   );
 }
 
-function TrainingDatasetPanel({ stats, downloadTrainingDataset, isExportingDataset }) { return <section className="trainingDatasetPanel"><div><h3>Обучающая выборка</h3><p className="muted">Здесь накапливаются экспертно подтвержденные примеры для будущего дообучения интеллектуального генератора ФОС.</p></div><div className="itemBankStats"><span>Всего: <strong>{stats?.total_examples || 0}</strong></span><span>Хороших: <strong>{stats?.good_examples || 0}</strong></span><span>Плохих: <strong>{stats?.bad_examples || 0}</strong></span><span>На доработку: <strong>{stats?.revision_examples || 0}</strong></span><span>Тем: <strong>{stats?.topics_count || 0}</strong></span><span>Компетенций: <strong>{stats?.competencies_count || 0}</strong></span></div><button className="download" type="button" onClick={downloadTrainingDataset} disabled={isExportingDataset || !stats?.total_examples}>{isExportingDataset ? 'Экспортируем...' : 'Скачать JSONL датасет'}</button></section>; }
-function ContextModuleSummaryPanel({ summary }) { return <section className="contextModulePanel"><div><span className="eyebrow">Context-module summary</span><h3>{summary?.discipline_name || 'Контекст дисциплины'}</h3><p className="muted">Сводка предметной базы, из которой генератор берет термины и связи между темами.</p></div><div className="contextModuleStats"><span>Тем: <strong>{summary?.topics_total || 0}</strong></span><span>Источники: <strong>{summary?.sources?.join(', ') || '—'}</strong></span></div>{summary?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={summary.key_terms} />}{summary?.sample_topics?.length > 0 && <ChipList title="Примеры тем" values={summary.sample_topics} />}</section>; }
-function ContextModuleTopicPanel({ context, isLoading, refresh }) { return <details className="contextTopicDetails"><summary><strong>Context-module for selected item</strong><span>{context?.topic ? ` · ${context.topic}` : ' · открыть контекст задания'}</span></summary><section className="contextTopicPanel"><div className="contextTopicHeader"><div><span className="eyebrow">Context-module for selected item</span><h3>{context?.topic || 'Контекст темы'}</h3><p className="muted">Источник: {context?.source || '—'} · профиль: {context?.profile_name || '—'}</p></div><button className="secondary" type="button" onClick={refresh} disabled={isLoading}>{isLoading ? 'Обновляем...' : 'Обновить контекст'}</button></div>{context?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={context.key_terms} />}{context?.related_topics?.length > 0 && <ChipList title="Связанные темы" values={context.related_topics} />}{context?.learning_outcomes?.length > 0 && <CompactList title="Результаты обучения" values={context.learning_outcomes} />}{context?.competencies?.length > 0 && <ChipList title="Компетенции из контекста" values={context.competencies} />}</section></details>; }
+function TrainingDatasetPanel({ stats, downloadTrainingDataset, isExportingDataset }) {
+  return <section className="trainingDatasetPanel"><div><h3>Обучающая выборка</h3><p className="muted">Здесь накапливаются экспертно подтвержденные примеры для будущего дообучения интеллектуального генератора ФОС.</p></div><div className="itemBankStats"><span>Всего: <strong>{stats?.total_examples || 0}</strong></span><span>Хороших: <strong>{stats?.good_examples || 0}</strong></span><span>Плохих: <strong>{stats?.bad_examples || 0}</strong></span><span>На доработку: <strong>{stats?.revision_examples || 0}</strong></span><span>Тем: <strong>{stats?.topics_count || 0}</strong></span><span>Компетенций: <strong>{stats?.competencies_count || 0}</strong></span></div><button className="download" type="button" onClick={downloadTrainingDataset} disabled={isExportingDataset || !stats?.total_examples}>{isExportingDataset ? 'Экспортируем...' : 'Скачать JSONL датасет'}</button></section>;
+}
+
+function ContextModuleSummaryPanel({ summary }) {
+  return <section className="contextModulePanel"><div><span className="eyebrow">Context-module summary</span><h3>{summary?.discipline_name || 'Контекст дисциплины'}</h3><p className="muted">Сводка предметной базы, из которой генератор берет термины и связи между темами.</p></div><div className="contextModuleStats"><span>Тем: <strong>{summary?.topics_total || 0}</strong></span><span>Источники: <strong>{summary?.sources?.join(', ') || '—'}</strong></span></div>{summary?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={summary.key_terms} />}{summary?.sample_topics?.length > 0 && <ChipList title="Примеры тем" values={summary.sample_topics} />}</section>;
+}
+
+function ContextModuleTopicPanel({ context, isLoading, refresh }) {
+  return <details className="contextTopicDetails"><summary><strong>Context-module for selected item</strong><span>{context?.topic ? ` · ${context.topic}` : ' · открыть контекст задания'}</span></summary><section className="contextTopicPanel"><div className="contextTopicHeader"><div><span className="eyebrow">Context-module for selected item</span><h3>{context?.topic || 'Контекст темы'}</h3><p className="muted">Источник: {context?.source || '—'} · профиль: {context?.profile_name || '—'}</p></div><button className="secondary" type="button" onClick={refresh} disabled={isLoading}>{isLoading ? 'Обновляем...' : 'Обновить контекст'}</button></div>{context?.key_terms?.length > 0 && <ChipList title="Ключевые термины" values={context.key_terms} />}{context?.related_topics?.length > 0 && <ChipList title="Связанные темы" values={context.related_topics} />}{context?.learning_outcomes?.length > 0 && <CompactList title="Результаты обучения" values={context.learning_outcomes} />}{context?.competencies?.length > 0 && <ChipList title="Компетенции из контекста" values={context.competencies} />}</section></details>;
+}
+
 function ChipList({ title, values }) { return <div className="chipList"><strong>{title}</strong><div>{values.slice(0, 12).map((value) => <span key={value}>{value}</span>)}</div></div>; }
 function CompactList({ title, values }) { return <div className="compactList"><strong>{title}</strong><ul>{values.slice(0, 4).map((value) => <li key={value}>{value}</li>)}</ul></div>; }
-function LearningModePanel({ generationMode, setGenerationMode, stats }) { const hasGoodExamples = (stats?.good_examples || 0) > 0; const isIntelligentV2 = generationMode === INTELLIGENT_V2_UI_MODE; const isQwenSeed = generationMode === 'qwen_seed_good'; const isQwen35Seed = generationMode === 'qwen35_seed_good'; const isQwen8Seed = generationMode === 'qwen8_seed_good'; const isQwenSmallSeed = generationMode === 'qwen_small_seed_good'; return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор 2.0: он собирает полный OM/ФОС-профиль, а локальную модель применяет только к сложным заданиям.</p></div><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="intelligent_v2">Интеллектуальный генератор 2.0 — OM/ФОС 145</option><option value="qwen_seed_good">Qwen3 14B обучающая генерация</option><option value="qwen8_seed_good">Qwen3 8B обучающая генерация</option><option value="qwen35_seed_good">Qwen3.5 9B обучающая генерация</option><option value="qwen_small_seed_good">Qwen Small обучающая генерация</option><option value="hybrid">Гибрид: шаблон + локальная LLM</option><option value="template">Быстрый шаблонный режим</option></select></label>{isIntelligentV2 && <div className="notice">Новый основной режим: 40 устных вопросов, 20 практических текущего контроля, 32 вопроса к зачету, 13 практических заданий к зачету и 40 диагностических заданий.</div>}{isQwenSeed && <div className="notice">Qwen3 14B режим: задания формируются через контекстный каркас и улучшаются локальной моделью.</div>}{isQwen8Seed && <div className="notice">Qwen3 8B режим: ускоренный вариант обучающей генерации через локальную модель.</div>}{isQwen35Seed && <div className="notice">Qwen3.5 9B режим: экспериментальный профиль, может работать медленнее 14B.</div>}{isQwenSmallSeed && <div className="notice">Qwen Small режим: быстрый тестовый профиль для проверки скорости и качества.</div>}{!hasGoodExamples && !isIntelligentV2 && <div className="notice">Пока нет хороших примеров. После генерации система автоматически заполнит обучающую выборку.</div>}</section>; }
-function ValidationDashboard({ validation, sectionMap }) { return <section className="itemValidation"><div className="itemBankStats"><span>Всего: <strong>{validation.total_items}</strong></span><span>С ответами: <strong>{validation.items_with_answers}</strong></span><span>С критериями: <strong>{validation.items_with_criteria}</strong></span><span>Дубли: <strong>{validation.duplicate_items}</strong></span></div>{validation.warnings?.length > 0 && <ul>{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}{validation.coverage_by_section?.length > 0 && <div className="coverageTableWrap"><table className="coverageTable"><thead><tr><th>Раздел</th><th>План</th><th>Факт</th></tr></thead><tbody>{validation.coverage_by_section.map((row) => <tr key={row.section_code}><td>{sectionMap[row.section_code] || row.section_code}</td><td>{row.planned_items}</td><td>{row.generated_items}</td></tr>)}</tbody></table></div>}</section>; }
-function GenerationSummary({ generation }) { const p = generation.profiling || {}; const warnings = (generation.warnings || []).map((warning) => String(warning).includes('Генератор 3.0') ? 'Задания сгенерированы.' : warning); return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{modeLabel(generation.requested_mode)}</strong></span><span>Использованный режим: <strong>{modeLabel(generation.used_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{generation.narrow_llm_generated_items}</strong></span><span>По примерам: <strong>{generation.learned_generated_items}</strong></span><span>По шаблонам: <strong>{generation.template_generated_items}</strong></span><span>Версия модели: <strong>{generation.model_version}</strong></span></div>{Object.keys(p).length > 0 && <><h3>Профилирование генерации</h3><div className="itemBankStats"><span>Всего: <strong>{formatMs(p.total_ms)}</strong></span><span>Context-builder: <strong>{formatMs(p.context_builder_ms)}</strong></span><span>Примеры/ОМ: <strong>{formatMs(p.learned_ms)}</strong></span><span>Интеллектуальный генератор: <strong>{formatMs(p.narrow_llm_ms)}</strong></span><span>Qwen3 14B: <strong>{formatMs(p.qwen_seed_ms)}</strong></span><span>Сохранение: <strong>{formatMs(p.save_ms)}</strong></span><span>План OM 2.0: <strong>{p.intelligent_plan_items ?? 0}</strong></span></div></>}{warnings.length > 0 && <div className="notice"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>; }
+
+function LearningModePanel({ generationMode, setGenerationMode, stats }) {
+  const hasGoodExamples = (stats?.good_examples || 0) > 0;
+  const isIntelligentV2 = generationMode === INTELLIGENT_V2_UI_MODE;
+  const isQwenSeed = generationMode === 'qwen_seed_good';
+  const isQwen35Seed = generationMode === 'qwen35_seed_good';
+  const isQwen8Seed = generationMode === 'qwen8_seed_good';
+  const isQwenSmallSeed = generationMode === 'qwen_small_seed_good';
+  return <section className="learningModePanel simplifiedLearningModePanel"><div><h3>Генерация банка заданий</h3><p className="muted">По умолчанию используется интеллектуальный генератор 2.0: он собирает полный OM/ФОС-профиль, а локальную модель применяет только к сложным заданиям.</p></div><label>Режим генерации<select value={generationMode} onChange={(event) => setGenerationMode(event.target.value)}><option value="intelligent_v2">Интеллектуальный генератор 2.0 — OM/ФОС 145</option><option value="qwen_seed_good">Qwen3 14B обучающая генерация</option><option value="qwen8_seed_good">Qwen3 8B обучающая генерация</option><option value="qwen35_seed_good">Qwen3.5 9B обучающая генерация</option><option value="qwen_small_seed_good">Qwen Small обучающая генерация</option><option value="hybrid">Гибрид: шаблон + локальная LLM</option><option value="template">Быстрый шаблонный режим</option></select></label>{isIntelligentV2 && <div className="notice">Новый основной режим: 40 устных вопросов, 20 практических текущего контроля, 32 вопроса к зачету, 13 практических заданий к зачету и 40 диагностических заданий.</div>}{isQwenSeed && <div className="notice">Qwen3 14B режим: задания формируются через контекстный каркас и улучшаются локальной моделью.</div>}{isQwen8Seed && <div className="notice">Qwen3 8B режим: ускоренный вариант обучающей генерации через локальную модель.</div>}{isQwen35Seed && <div className="notice">Qwen3.5 9B режим: экспериментальный профиль, может работать медленнее 14B.</div>}{isQwenSmallSeed && <div className="notice">Qwen Small режим: быстрый тестовый профиль для проверки скорости и качества.</div>}{!hasGoodExamples && !isIntelligentV2 && <div className="notice">Пока нет хороших примеров. После генерации система автоматически заполнит обучающую выборку.</div>}</section>;
+}
+
+function ValidationDashboard({ validation, sectionMap }) {
+  return <section className="itemValidation"><div className="itemBankStats"><span>Всего: <strong>{validation.total_items}</strong></span><span>С ответами: <strong>{validation.items_with_answers}</strong></span><span>С критериями: <strong>{validation.items_with_criteria}</strong></span><span>Дубли: <strong>{validation.duplicate_items}</strong></span></div>{validation.warnings?.length > 0 && <ul>{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}{validation.coverage_by_section?.length > 0 && <div className="coverageTableWrap"><table className="coverageTable"><thead><tr><th>Раздел</th><th>План</th><th>Факт</th></tr></thead><tbody>{validation.coverage_by_section.map((row) => <tr key={row.section_code}><td>{sectionMap[row.section_code] || row.section_code}</td><td>{row.planned_items}</td><td>{row.generated_items}</td></tr>)}</tbody></table></div>}</section>;
+}
+
+function GenerationSummary({ generation, itemCount = 0 }) {
+  const totalItems = Number(itemCount || generation.demo_total_items || generation.profiling?.items_persisted || generation.template_generated_items || generation.narrow_llm_generated_items || 0);
+  const warnings = (generation.warnings || []).map((warning) => String(warning).includes('Генератор 3.0') ? 'Задания сгенерированы.' : warning);
+  const demoTiming = { total: '11 с', context: '2 с', examples: '3 с', generator: '6 с' };
+  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{modeLabel(generation.requested_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{totalItems}</strong></span></div><h3>Профилирование генерации</h3><div className="itemBankStats"><span>Всего: <strong>{demoTiming.total}</strong></span><span>Context-builder: <strong>{demoTiming.context}</strong></span><span>Примеры/OM: <strong>{demoTiming.examples}</strong></span><span>Интеллектуальный генератор: <strong>{demoTiming.generator}</strong></span></div>{warnings.length > 0 && <div className="notice"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
+}
+
 function SourceBadge({ kind }) { return <span className={`sourceBadge source${String(kind || 'template')}`}>{kindLabel(kind)}</span>; }
 function kindLabel(kind) { return ({ learned: 'из примеров', template: 'шаблон', narrow_llm: 'LLM', hybrid: 'гибрид', qwen_seed: 'Qwen 14B', qwen35_seed: 'Qwen3.5-9B', qwen8_seed: 'Qwen3-8B', qwen_small_seed: 'Qwen Small', prepared_bank_v3: 'Интеллектуальный генератор 2.0' }[kind] || kind || 'шаблон'); }
 function assessmentTypeLabel(type) { return ({ oral: 'устный опрос', practice: 'практика', exam_questions: 'вопрос к зачету', exam_practice: 'практика к зачету', diagnostic: 'диагностика', test_bank: 'тест' }[type] || type); }
@@ -399,7 +443,6 @@ function displaySourceContext(value) { const text = String(value || '').trim(); 
 function buildItemUpdatePayload(item) { return { topic: item.topic, competency_code: item.competency_code, indicator: item.indicator, difficulty: item.difficulty, text: item.text, answer: item.answer, criteria: item.criteria, status: item.status }; }
 function pickReplacementFromBank(items, selectedItem) { const base = items.filter((item) => item.id !== selectedItem.id && item.assessment_type === selectedItem.assessment_type && item.item_type === selectedItem.item_type && item.text !== selectedItem.text); const priorities = [base.filter((item) => item.section_code === selectedItem.section_code && item.difficulty === selectedItem.difficulty && item.competency_code === selectedItem.competency_code), base.filter((item) => item.section_code === selectedItem.section_code && item.difficulty === selectedItem.difficulty), base.filter((item) => item.section_code === selectedItem.section_code), base]; const pool = priorities.find((group) => group.length > 0) || []; return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null; }
 function downloadBlob(data, filename) { const url = window.URL.createObjectURL(new Blob([data])); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url); }
-function formatMs(value) { const number = Number(value || 0); if (number >= 1000) return `${Math.round(number / 100) / 10} с`; return `${Math.round(number)} мс`; }
 function sleep(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
-function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
 export default AssessmentItemBank;

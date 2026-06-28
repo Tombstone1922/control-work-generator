@@ -3,7 +3,10 @@ import React, { useEffect, useState } from 'react';
 function DemoBankPanel({ api, program, setError, setSuccess }) {
   const [mode, setMode] = useState('seed');
   const [summary, setSummary] = useState(null);
+  const [bulkSummary, setBulkSummary] = useState(null);
+  const [bulkFiles, setBulkFiles] = useState([]);
   const [isSeeding, setSeeding] = useState(false);
+  const [isBulkSeeding, setBulkSeeding] = useState(false);
   const [isOpening, setOpening] = useState(false);
   const [isDownloadingCurrent, setDownloadingCurrent] = useState(false);
   const [isDownloadingAll, setDownloadingAll] = useState(false);
@@ -29,6 +32,25 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       setError(err.response?.data?.detail || 'Не удалось подготовить банк заданий.');
     } finally {
       setSeeding(false);
+    }
+  }
+
+  async function bulkSeedBank() {
+    if (!bulkFiles.length) return setError('Выберите несколько РПД для массового наполнения банка.');
+    setBulkSeeding(true);
+    setError('');
+    setSuccess('');
+    setBulkSummary(null);
+    try {
+      const formData = new FormData();
+      bulkFiles.forEach((file) => formData.append('files', file));
+      const response = await api.post('/api/demo-bank-bulk/upload-seed', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setBulkSummary(response.data);
+      setSuccess(`Массовое наполнение завершено: ${response.data.ready}/${response.data.total_files} РПД готовы, всего ${response.data.total_items} заданий.`);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось выполнить массовое наполнение банка.');
+    } finally {
+      setBulkSeeding(false);
     }
   }
 
@@ -94,27 +116,44 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
 
       <div className="authTabs demoModeTabs">
         <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
+        <button className={mode === 'bulk' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('bulk')}>Массово 600</button>
         <button className={mode === 'work' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('work')}>Рабочий режим</button>
       </div>
 
       <div className="notice">
-        <strong>План банка:</strong> 40 устных вопросов, 20 практических заданий, 32 вопроса к зачету, 13 практических заданий к зачету, 40 тестовых диагностических заданий. Итого 145 элементов.
+        <strong>План банка под каждую РПД:</strong> 160 устных вопросов, 120 практических заданий, 120 вопросов к зачету, 80 практических заданий к зачету, 120 тестовых диагностических заданий. Итого 600 элементов.
       </div>
 
-      {mode === 'seed' ? (
+      {mode === 'seed' && (
         <div className="demoModeBlock">
           <h3>Набор заданий</h3>
-          <p className="muted">Этот режим запускается заранее. Общая система строит вопросы и ответы по РПД: устные вопросы, практику, тесты с A-D, эталонные ответы и критерии.</p>
+          <p className="muted">Этот режим запускается заранее. Общая система строит вопросы и ответы по текущей РПД.</p>
           <div className="demoBankActions">
             <button className="primary" type="button" onClick={seedBank} disabled={isSeeding || !program}>{isSeeding ? 'Общая система набивает банк...' : 'Набить банк заданий для текущей РПД'}</button>
             <button className="secondary" type="button" onClick={downloadCurrentBank} disabled={isDownloadingCurrent || !program}>{isDownloadingCurrent ? 'Скачиваем...' : 'Скачать банк текущей РПД'}</button>
             <button className="download" type="button" onClick={downloadAllBanks} disabled={isDownloadingAll}>{isDownloadingAll ? 'Скачиваем архив...' : 'Скачать весь банк'}</button>
           </div>
         </div>
-      ) : (
+      )}
+
+      {mode === 'bulk' && (
+        <div className="demoModeBlock">
+          <h3>Массовое наполнение банка</h3>
+          <p className="muted">Загрузите сразу много РПД. Для каждой РПД система создаст отдельный подготовленный JSON-банк на 600 заданий, чтобы потом брать задания для ФОС, контрольной и замен.</p>
+          <input className="fileInput" type="file" accept=".docx,.pdf,.txt" multiple onChange={(event) => setBulkFiles(Array.from(event.target.files || []))} />
+          <p className="muted">Выбрано файлов: <strong>{bulkFiles.length}</strong></p>
+          <div className="demoBankActions">
+            <button className="primary" type="button" onClick={bulkSeedBank} disabled={isBulkSeeding || !bulkFiles.length}>{isBulkSeeding ? 'Обрабатываем РПД по очереди...' : 'Запустить массовое наполнение'}</button>
+            <button className="download" type="button" onClick={downloadAllBanks} disabled={isDownloadingAll}>{isDownloadingAll ? 'Скачиваем архив...' : 'Скачать весь банк'}</button>
+          </div>
+          {bulkSummary && <BulkBankSummary summary={bulkSummary} />}
+        </div>
+      )}
+
+      {mode === 'work' && (
         <div className="demoModeBlock">
           <h3>Рабочий режим</h3>
-          <p className="muted">Можно просто загрузить РПД заново. Если имя совпадает, например RP_09.03.02_5990_2925_2025, система найдет постоянный банк и покажет задания без генерации.</p>
+          <p className="muted">Можно просто загрузить РПД заново. Если имя совпадает, система найдет постоянный банк и покажет задания без генерации.</p>
           <div className="demoBankActions">
             <button className="primary" type="button" onClick={openWorkMode} disabled={isOpening || !program}>{isOpening ? 'Ищем банк по названию...' : 'Показать готовые задания'}</button>
             <button className="secondary" type="button" onClick={downloadCurrentBank} disabled={isDownloadingCurrent || !program}>{isDownloadingCurrent ? 'Скачиваем...' : 'Скачать банк текущей РПД'}</button>
@@ -125,6 +164,29 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
 
       {summary && <PreparedBankSummary summary={summary} />}
     </section>
+  );
+}
+
+function BulkBankSummary({ summary }) {
+  return (
+    <div className="generationSummary demoBankSummary">
+      <strong>Итог массового наполнения</strong>
+      <div className="itemBankStats">
+        <span>РПД: <strong>{summary.total_files}</strong></span>
+        <span>Готово: <strong>{summary.ready}</strong></span>
+        <span>Ошибок: <strong>{summary.failed}</strong></span>
+        <span>Всего заданий: <strong>{summary.total_items}</strong></span>
+        <span>План на РПД: <strong>{summary.planned_items_per_rpd}</strong></span>
+      </div>
+      <div className="historyItems">
+        {summary.items.map((item) => (
+          <div className="historyItem" key={`${item.filename}-${item.program_id || item.error}`}>
+            <strong>{item.filename}</strong>
+            <span>{item.status === 'error' ? item.error : `${item.total_items}/${item.planned_items} заданий · ${item.persistent_path}`}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

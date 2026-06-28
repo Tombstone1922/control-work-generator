@@ -71,15 +71,6 @@
   font-size: 12px;
 }
 
-.fosReadinessGrid .readinessPill:nth-child(3) strong {
-  font-size: 0;
-}
-
-.fosReadinessGrid .readinessPill:nth-child(3) strong::after {
-  content: '145/145';
-  font-size: 16px;
-}
-
 .itemBank > .sectionHeader .actionGroup > .download {
   display: none;
 }

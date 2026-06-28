@@ -96,7 +96,7 @@ function AssessmentFundPanel({ api, program, user, openedFromStorage = false, se
     if (!fund?.fund_id || !canEditFund) return;
     setSaving(true); setError(''); setSuccess('');
     try {
-      const response = await api.put(`/api/assessment-funds/${fund.fund_id}`, { title: fund.title, discipline_name: fund.discipline_name, status: fund.status, assessment_types: fund.assessment_types, sections: fund.sections });
+      const response = await api.put(`/api/assessment-funds/${fund.fund_id}`, { title: fund.title, discipline_name: fund.discipline_name, assessment_types: fund.assessment_types, sections: fund.sections });
       setFund(response.data); setDisciplineName(response.data.discipline_name); setHasUnsavedChanges(false); await loadFunds(); setSuccess('Изменения структуры ФОС сохранены.');
     } catch (err) { setError(err.response?.data?.detail || 'Не удалось сохранить изменения структуры ФОС.'); } finally { setSaving(false); }
   }

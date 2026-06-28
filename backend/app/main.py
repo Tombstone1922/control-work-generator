@@ -6,6 +6,7 @@ from app import models
 from app.assessment_item_validation import AssessmentItemsValidation
 from app.database import get_db, init_db
 from app.repositories_assessment_items import get_fund_entity_for_user, list_items_for_user
+from app.services import prepared_bank_600_profile  # noqa: F401
 from app.routers import (
     admin,
     assessment_funds,

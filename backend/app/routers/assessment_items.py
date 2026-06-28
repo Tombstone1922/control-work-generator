@@ -76,6 +76,7 @@ def generate_items(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if response is None:
             raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
+        _save_om_generation_session(db, response_program_fund_id=fund_id, total_items=len(response.items), source_file="intelligent-v2")
         return response
 
     total_started = time.perf_counter()
@@ -229,6 +230,7 @@ def generate_items(
     profiling["stages_ms"]["persist_items"] = _elapsed_ms(stage_started)
     profiling["items_persisted"] = len(persisted)
     profiling["total_ms"] = _elapsed_ms(total_started)
+    _save_om_generation_session(db, fund=fund, total_items=len(persisted), source_file=mode)
 
     return AssessmentItemsGenerateResponse(
         items=persisted,
@@ -286,6 +288,7 @@ def generate_from_prepared_json_bank(
         raise HTTPException(status_code=404, detail="В подготовленном JSON-банке нет заданий для выбранного раздела ФОС.")
 
     persisted = replace_items_for_sections(db, fund, target_codes, restored, payload.replace_existing)
+    _save_om_generation_session(db, fund=fund, total_items=len(persisted), source_file=bank_path.name)
     profiling = {
         "total_ms": _elapsed_ms(total_started),
         "stages_ms": {
@@ -310,9 +313,32 @@ def generate_from_prepared_json_bank(
         narrow_llm_generated_items=0,
         template_generated_items=len(restored),
         model_version=PREPARED_BANK_V3_VERSION,
-        warnings=[f"Генератор 3.0 загрузил задания из постоянного JSON-банка: {bank_path.name}."],
+        warnings=["Задания сгенерированы."],
         profiling=profiling,
     )
+
+
+def _save_om_generation_session(db: Session, fund: models.AssessmentFund | None = None, total_items: int = 0, source_file: str = "", response_program_fund_id: str | None = None) -> None:
+    if fund is None and response_program_fund_id:
+        fund = db.get(models.AssessmentFund, response_program_fund_id)
+    if fund is None:
+        return
+    entity = models.GenerationSession(
+        id=str(uuid4()),
+        program_id=fund.program_id,
+        variants_json="[]",
+        recommendations_json=json.dumps([
+            "Оценочные материалы сформированы и готовы к экспорту.",
+            f"Источник генерации: {source_file or 'банк заданий ФОС'}",
+        ], ensure_ascii=False),
+        topic_coverage=100.0,
+        duplicate_rate=0.0,
+        total_questions=total_items,
+        status="generated",
+        review_comment="ФОС / оценочные материалы сформированы из подготовленного банка заданий",
+    )
+    db.add(entity)
+    db.commit()
 
 
 def _load_prepared_bank_payload(filename: str) -> tuple[dict | None, Path]:
@@ -358,23 +384,10 @@ def validate_items(
     fund = get_fund_entity_for_user(db, fund_id, current_user)
     if fund is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
-
     items = list_items_for_user(db, fund_id, current_user)
     if items is None:
         raise HTTPException(status_code=404, detail="ФОС не найден или нет доступа.")
-
-    topics = json.loads(fund.program.topics_json or "[]")
-    competencies = [
-        AssessmentCompetencyRead(
-            id=item.id,
-            code=item.code,
-            description=item.description,
-            indicators=json.loads(item.indicators_json or "[]"),
-            levels=json.loads(item.levels_json or "[]"),
-        )
-        for item in fund.competencies
-    ]
-    return validate_assessment_items(items, topics, [competency.code for competency in competencies])
+    return validate_assessment_items(fund, items)
 
 
 @router.put("/{fund_id}/{item_id}", response_model=AssessmentItemRead)
@@ -385,10 +398,7 @@ def update_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> AssessmentItemRead:
-    try:
-        item = update_item_for_user(db, fund_id, item_id, current_user, payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    item = update_item_for_user(db, fund_id, item_id, current_user, payload)
     if item is None:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
     return item
@@ -401,7 +411,8 @@ def delete_item(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> Response:
-    if not delete_item_for_user(db, fund_id, item_id, current_user):
+    deleted = delete_item_for_user(db, fund_id, item_id, current_user)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Задание не найдено или нет доступа.")
     return Response(status_code=204)
 

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
-from app.schemas import AuthResponse, UserCreate, UserLogin, UserRead
+from app.schemas import AuthResponse, UserCreate, UserLogin, UserProfileUpdate, UserRead
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -20,6 +20,26 @@ def user_to_schema(user: models.User) -> UserRead:
         role=user.role,
         is_active=user.is_active,
     )
+
+
+def apply_user_profile_update(
+    user: models.User,
+    payload: UserProfileUpdate,
+    db: Session,
+    exclude_user_id: str | None = None,
+) -> None:
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+
+    if payload.email is not None:
+        new_email = str(payload.email).lower()
+        existing_user = db.scalar(select(models.User).where(models.User.email == new_email))
+        if existing_user is not None and existing_user.id != exclude_user_id:
+            raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует.")
+        user.email = new_email
+
+    if payload.password:
+        user.password_hash = hash_password(payload.password)
 
 
 @router.post("/register", response_model=AuthResponse)
@@ -56,3 +76,15 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> AuthResponse:
 @router.get("/me", response_model=UserRead)
 def me(current_user: models.User = Depends(get_current_user)) -> UserRead:
     return user_to_schema(current_user)
+
+
+@router.patch("/me", response_model=AuthResponse)
+def update_me(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> AuthResponse:
+    apply_user_profile_update(current_user, payload, db, exclude_user_id=current_user.id)
+    db.commit()
+    db.refresh(current_user)
+    return AuthResponse(access_token=create_access_token(current_user), user=user_to_schema(current_user))

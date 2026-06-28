@@ -1,5 +1,44 @@
 .workspaceTabs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.heroTitleBlock {
+  min-width: 0;
+}
+
+.heroTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.heroTitleRow h1 {
+  margin: 0;
+}
+
+.adminGearButton {
+  width: 52px;
+  height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #d5dff3;
+  border-radius: 16px;
+  background: #f8faff;
+  color: #3858d6;
+  font-size: 24px;
+  font-weight: 900;
+  box-shadow: 0 10px 24px rgba(52, 79, 160, 0.08);
+  cursor: pointer;
+}
+
+.adminGearButton:hover,
+.adminGearButtonActive {
+  border-color: #6d88ff;
+  background: #eef2ff;
+  color: #2449d8;
 }
 
 .projectStatusDashboard {
@@ -320,10 +359,18 @@
 .darkTheme .readinessPill,
 .darkTheme .controlResultPanel span,
 .darkTheme .controlAnswerBox,
-.darkTheme .toggleLabel {
+.darkTheme .toggleLabel,
+.darkTheme .adminGearButton {
   border-color: rgba(164, 184, 226, 0.28);
   background: rgba(21, 34, 57, 0.82);
   color: #dbe6ff;
+}
+
+.darkTheme .adminGearButton:hover,
+.darkTheme .adminGearButtonActive {
+  border-color: rgba(109, 136, 255, 0.6);
+  background: rgba(72, 96, 180, 0.44);
+  color: #ffffff;
 }
 
 .darkTheme .projectStatusHeader h2,

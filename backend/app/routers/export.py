@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
-from app.repositories import get_generation_for_user
+from app.repositories import get_generation_for_user, get_program_for_user
 from app.repositories_assessment_funds import get_assessment_fund_for_user
 from app.repositories_assessment_items import get_fund_entity_for_user, list_items_for_user, replace_items_for_sections
 from app.repositories_training_examples import list_training_examples_for_user
@@ -34,7 +34,8 @@ def export_docx(
     if generation is None:
         raise HTTPException(status_code=404, detail="Сеанс генерации не найден или нет доступа.")
 
-    file_path = export_generation_to_docx(generation)
+    program = get_program_for_user(db, generation.program_id, current_user)
+    file_path = export_generation_to_docx(generation, program)
     return FileResponse(
         path=str(file_path),
         filename=file_path.name,

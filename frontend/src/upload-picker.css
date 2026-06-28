@@ -1,0 +1,83 @@
+.uploadCard .fileInput {
+  width: 100%;
+  min-height: 82px;
+  margin: 16px 0 16px;
+  padding: 14px;
+  border: 2px dashed #aebdf2;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fbff, #f1f6ff);
+  color: #66728a;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+.uploadCard .fileInput:hover {
+  border-color: #3858d6;
+  background: linear-gradient(135deg, #f5f8ff, #eef4ff);
+  box-shadow: 0 14px 34px rgba(56, 88, 214, 0.14);
+  transform: translateY(-1px);
+}
+
+.uploadCard .fileInput:focus {
+  border-color: #3858d6;
+  box-shadow: 0 0 0 4px rgba(56, 88, 214, 0.12), 0 14px 34px rgba(56, 88, 214, 0.14);
+}
+
+.uploadCard .fileInput::file-selector-button {
+  min-height: 52px;
+  margin: 0 14px 0 0;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #3858d6, #5d7fd8);
+  color: #ffffff;
+  font-weight: 850;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(56, 88, 214, 0.25);
+  transition: box-shadow 0.18s ease, transform 0.18s ease, filter 0.18s ease;
+}
+
+.uploadCard .fileInput::file-selector-button:hover {
+  filter: brightness(0.96);
+  box-shadow: 0 12px 28px rgba(56, 88, 214, 0.32);
+}
+
+.uploadCard .fileInput::file-selector-button:active {
+  transform: translateY(1px);
+}
+
+.uploadCard .selectedFile {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-top: 2px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #3858d6;
+  font-weight: 700;
+}
+
+.uploadCard .selectedFile::before {
+  content: '✓';
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3858d6;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+body.darkTheme .uploadCard .fileInput {
+  border-color: rgba(135, 155, 235, 0.42);
+  background: linear-gradient(135deg, rgba(25, 33, 57, 0.94), rgba(31, 42, 74, 0.94));
+  color: #c7d2fe;
+}
+
+body.darkTheme .uploadCard .selectedFile {
+  background: rgba(122, 147, 255, 0.14);
+  color: #dbe5ff;
+}

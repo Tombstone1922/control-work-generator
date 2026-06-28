@@ -5,6 +5,7 @@ import './styles.css';
 import './analysis.css';
 import './fos.css';
 import './item-bank.css';
+import './upload-picker.css';
 import './compact-generation.css';
 import './competency-editor.css';
 import './theme.css';

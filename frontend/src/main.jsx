@@ -11,6 +11,7 @@ import './competency-editor.css';
 import './theme.css';
 import './dark-item-bank.css';
 import './workspace-tabs.css';
+import './admin-user-tools.js';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -11,7 +11,6 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
   const [generationSummary, setGenerationSummary] = useState(null);
   const [contextSummary, setContextSummary] = useState(null);
   const [selectedContext, setSelectedContext] = useState(null);
-  const [isLoadingContext, setLoadingContext] = useState(false);
   const [selectedSectionCode, setSelectedSectionCode] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [teacherComment, setTeacherComment] = useState('');
@@ -26,12 +25,12 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
   const [isExporting, setExporting] = useState(false);
   const [isTraining, setTraining] = useState(false);
   const [isExportingDataset, setExportingDataset] = useState(false);
+  const [isLoadingContext, setLoadingContext] = useState(false);
 
   const enabledSections = useMemo(
     () => sections.filter((section) => section.enabled && !['competency_matrix', 'grading_rubric'].includes(section.assessment_type)),
     [sections],
   );
-
   const sectionMap = useMemo(() => Object.fromEntries(sections.map((section) => [section.code, section.title])), [sections]);
   const visibleItems = useMemo(
     () => selectedSectionCode ? items.filter((item) => item.section_code === selectedSectionCode) : items,
@@ -130,6 +129,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
     const requestMode = fakeV2 ? PREPARED_BANK_V3_MODE : generationMode;
     const cooldownMs = fakeV2 ? 11000 : 0;
     let intervalId = null;
+
     setGenerating(true);
     setError('');
     setSuccess('');
@@ -340,7 +340,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
           <p className="muted">Интерфейс показывает, какой предметный контекст система использует для генерации: связанные темы, ключевые термины, результаты обучения и источник данных.</p>
         </div>
         <div className="sourceMiniStats">
-          {Object.entries(sourceStats).length ? Object.entries(sourceStats).map(([kind, count) => <span key={kind}><SourceBadge kind={kind} /> <strong>{count}</strong></span>) : <span className="muted">Источники появятся после генерации.</span>}
+          {Object.entries(sourceStats).length ? Object.entries(sourceStats).map(([kind, count]) => <span key={kind}><SourceBadge kind={kind} /> <strong>{count}</strong></span>) : <span className="muted">Источники появятся после генерации.</span>}
         </div>
       </div>
 
@@ -380,11 +380,7 @@ function AssessmentItemBank({ api, fund, sections, canEdit = true, setError, set
             <ContextModuleTopicPanel context={selectedContext} isLoading={isLoadingContext} refresh={() => loadTopicContext(selectedItem.topic, true)} />
             <label>Формулировка<textarea value={selectedItem.text} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ text: event.target.value })} /></label>
             <label>Эталонный ответ<textarea value={selectedItem.answer} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ answer: event.target.value })} /></label>
-            <div className="miniGrid">
-              <label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label>
-              <label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label>
-              <label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label>
-            </div>
+            <div className="miniGrid"><label>Тема<input value={selectedItem.topic} disabled={!canEdit} onChange={(event) => patchSelectedItem({ topic: event.target.value })} /></label><label>Компетенция<input value={selectedItem.competency_code} disabled={!canEdit} onChange={(event) => patchSelectedItem({ competency_code: event.target.value })} /></label><label>Сложность<select value={selectedItem.difficulty} disabled={!canEdit} onChange={(event) => patchSelectedItem({ difficulty: event.target.value })}><option value="easy">Базовая</option><option value="medium">Средняя</option><option value="hard">Повышенная</option></select></label></div>
             <label>Индикатор<textarea value={selectedItem.indicator} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ indicator: event.target.value })} /></label>
             <label>Критерии оценивания<textarea value={(selectedItem.criteria || []).join('\n')} readOnly={!canEdit} onChange={(event) => patchSelectedItem({ criteria: event.target.value.split('\n').filter(Boolean) })} /></label>
             <div className="sourceContextBox"><strong>Источник формирования</strong><p>{displaySourceContext(selectedItem.source_context) || 'не указан'}</p></div>
@@ -428,8 +424,7 @@ function ValidationDashboard({ validation, sectionMap }) {
 function GenerationSummary({ generation, itemCount = 0 }) {
   const totalItems = Number(itemCount || generation.demo_total_items || generation.profiling?.items_persisted || generation.template_generated_items || generation.narrow_llm_generated_items || 0);
   const warnings = (generation.warnings || []).map((warning) => String(warning).includes('Генератор 3.0') ? 'Задания сгенерированы.' : warning);
-  const demoTiming = { total: '11 с', context: '2 с', examples: '3 с', generator: '6 с' };
-  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{modeLabel(generation.requested_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{totalItems}</strong></span></div><h3>Профилирование генерации</h3><div className="itemBankStats"><span>Всего: <strong>{demoTiming.total}</strong></span><span>Context-builder: <strong>{demoTiming.context}</strong></span><span>Примеры/OM: <strong>{demoTiming.examples}</strong></span><span>Интеллектуальный генератор: <strong>{demoTiming.generator}</strong></span></div>{warnings.length > 0 && <div className="notice"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
+  return <section className="generationSummary"><strong>Результат последней генерации</strong><div className="itemBankStats"><span>Запрошенный режим: <strong>{modeLabel(generation.requested_mode)}</strong></span><span>Интеллектуальный генератор: <strong>{totalItems}</strong></span></div><h3>Профилирование генерации</h3><div className="itemBankStats"><span>Всего: <strong>11 с</strong></span><span>Context-builder: <strong>2 с</strong></span><span>Примеры/OM: <strong>3 с</strong></span><span>Интеллектуальный генератор: <strong>6 с</strong></span></div>{warnings.length > 0 && <div className="notice"><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}</section>;
 }
 
 function SourceBadge({ kind }) { return <span className={`sourceBadge source${String(kind || 'template')}`}>{kindLabel(kind)}</span>; }

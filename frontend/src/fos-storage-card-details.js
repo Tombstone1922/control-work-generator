@@ -60,10 +60,22 @@ function cardTitle(fund) {
   return fund.discipline_name || fund.title || '';
 }
 
+function person(value, fallback) {
+  return String(value || '').trim() || fallback;
+}
+
+function reviewerText(fund) {
+  if (!['approved', 'revision_required'].includes(fund.status)) return 'Проверил: ожидает проверки';
+  const reviewedBy = person(fund.reviewed_by_name, 'не указан');
+  const reviewedAt = fund.reviewed_at ? `, ${formatDate(fund.reviewed_at)}` : '';
+  return `Проверил: ${reviewedBy}${reviewedAt}`;
+}
+
 function detailText(fund, statusText) {
   const rpd = fund.program_filename || fund.program?.filename || 'РПД не указана';
   const time = formatDate(fund.created_at || fund.updated_at);
-  return `РПД: ${rpd} · Сформировано: ${time} · ${statusText} · ${countItems(fund)} элементов ФОС`;
+  const author = person(fund.created_by_name, 'не указан');
+  return `РПД: ${rpd} · Сформировано: ${time} · Сформировал: ${author} · ${reviewerText(fund)} · ${statusText} · ${countItems(fund)} элементов ФОС`;
 }
 
 function findSection(title) {

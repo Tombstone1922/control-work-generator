@@ -72,6 +72,46 @@ class ProgramAnalysis(BaseModel):
     analysis_report: RpdAnalysisReport = Field(default_factory=RpdAnalysisReport)
 
 
+class GenerationRequest(BaseModel):
+    program_id: str
+    variants_count: int = Field(default=2, ge=1, le=20)
+    questions_per_variant: int = Field(default=5, ge=1, le=50)
+    difficulty: str = "medium"
+    question_types: List[str] = Field(default_factory=lambda: ["open", "practice"])
+
+
+class Question(BaseModel):
+    id: str
+    topic: str
+    text: str
+    type: str = "open"
+    difficulty: str = "medium"
+    answer: str = ""
+    criteria: List[str] = Field(default_factory=list)
+
+
+class ControlWorkVariant(BaseModel):
+    variant_number: int
+    questions: List[Question]
+
+
+class QualityReport(BaseModel):
+    topic_coverage: float = 0.0
+    duplicate_rate: float = 0.0
+    total_questions: int = 0
+    recommendations: List[str] = Field(default_factory=list)
+
+
+class GenerationResponse(BaseModel):
+    session_id: str
+    program_id: str
+    variants: List[ControlWorkVariant]
+    quality_report: QualityReport
+    status: str = "generated"
+    review_comment: str = ""
+    reviewed_by_user_id: str | None = None
+
+
 class AssessmentFundSection(BaseModel):
     code: str
     title: str

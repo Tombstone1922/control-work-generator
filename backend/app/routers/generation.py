@@ -19,6 +19,7 @@ from app.repositories import (
 )
 from app.schemas import ControlWorkVariant, GenerationRequest, GenerationResponse
 from app.security import get_current_user
+from app.services.control_pool import make_replacement, make_variants
 from app.services.question_generator import generate_question, generate_variants
 from app.services.quality_checker import build_quality_report
 from app.services.role_policy import (
@@ -54,13 +55,15 @@ def run_generation(
     ensure_can_edit_program_content(current_user, program_entity)
     program = program_to_schema(program_entity)
 
-    variants = generate_variants(
-        topics=program.topics,
-        variants_count=payload.variants_count,
-        questions_per_variant=payload.questions_per_variant,
-        difficulty=payload.difficulty,
-        question_types=payload.question_types,
-    )
+    variants = make_variants(program_entity, payload)
+    if not variants:
+        variants = generate_variants(
+            topics=program.topics,
+            variants_count=payload.variants_count,
+            questions_per_variant=payload.questions_per_variant,
+            difficulty=payload.difficulty,
+            question_types=payload.question_types,
+        )
     report = build_quality_report(variants, program.topics)
 
     response = GenerationResponse(
@@ -176,7 +179,13 @@ def regenerate_question(
         for index, question in enumerate(variant.questions):
             if question.id == question_id:
                 question_found = True
-                new_question = generate_question(
+                new_question = make_replacement(
+                    program_entity,
+                    question_type=question.type,
+                    difficulty=question.difficulty,
+                    used_texts=all_texts,
+                    seed=len(all_texts) + index + variant.variant_number,
+                ) or generate_question(
                     topic=question.topic,
                     question_type=question.type,
                     difficulty=question.difficulty,

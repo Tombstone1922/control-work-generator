@@ -1,4 +1,7 @@
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -6,10 +9,17 @@ from app import models
 from app.database import get_db
 from app.routers.auth import apply_user_profile_update, user_to_schema
 from app.schemas import UserActiveUpdate, UserProfileUpdate, UserRead, UserRoleUpdate
-from app.security import require_roles
+from app.security import hash_password, require_roles
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 ALLOWED_ROLES = {"teacher", "methodist", "admin"}
+
+
+class AdminUserCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=255)
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=128)
+    role: str = "teacher"
 
 
 @router.get("/users", response_model=list[UserRead])
@@ -19,6 +29,34 @@ def list_users(
 ) -> list[UserRead]:
     users = db.scalars(select(models.User).order_by(models.User.created_at.asc())).all()
     return [user_to_schema(user) for user in users]
+
+
+@router.post("/users", response_model=UserRead)
+def create_user(
+    payload: AdminUserCreate,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_roles("admin")),
+) -> UserRead:
+    if payload.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail="Недопустимая роль пользователя.")
+
+    email = str(payload.email).lower()
+    existing_user = db.scalar(select(models.User).where(models.User.email == email))
+    if existing_user is not None:
+        raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует.")
+
+    user = models.User(
+        id=str(uuid4()),
+        full_name=payload.full_name.strip(),
+        email=email,
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user_to_schema(user)
 
 
 @router.patch("/users/{user_id}/profile", response_model=UserRead)

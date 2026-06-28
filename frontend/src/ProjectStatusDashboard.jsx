@@ -1,12 +1,59 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-function ProjectStatusDashboard({ program, generationsHistory = [] }) {
+function ProjectStatusDashboard({ api, program, generationsHistory = [] }) {
+  const [assessmentStatus, setAssessmentStatus] = useState({ items: 0, funds: 0, isLoading: false });
+
   const relevantGenerations = program?.program_id
     ? generationsHistory.filter((item) => item.program_id === program.program_id)
     : [];
   const hasControlWork = relevantGenerations.some((item) => !isAssessmentMaterialGeneration(item));
-  const hasAssessmentMaterials = relevantGenerations.some(isAssessmentMaterialGeneration);
+  const hasAssessmentGeneration = relevantGenerations.some(isAssessmentMaterialGeneration);
+  const hasAssessmentItems = assessmentStatus.items > 0;
+  const hasAssessmentMaterials = hasAssessmentGeneration || hasAssessmentItems;
   const quality = Number(program?.analysis_report?.diagnostics?.quality_score || 0);
+
+  useEffect(() => {
+    if (!api || !program?.program_id) {
+      setAssessmentStatus({ items: 0, funds: 0, isLoading: false });
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadAssessmentStatus() {
+      try {
+        setAssessmentStatus((current) => ({ ...current, isLoading: true }));
+        const fundsResponse = await api.get('/api/assessment-funds/');
+        const relatedFunds = fundsResponse.data.filter((fund) => fund.program_id === program.program_id);
+        let generatedItems = relatedFunds.reduce((sum, fund) => (
+          sum + (fund.sections || []).reduce((sectionSum, section) => sectionSum + Number(section.generated_items || 0), 0)
+        ), 0);
+
+        if (generatedItems === 0 && relatedFunds.length > 0) {
+          const itemResponses = await Promise.allSettled(
+            relatedFunds.map((fund) => api.get(`/api/assessment-items/${fund.fund_id}`)),
+          );
+          generatedItems = itemResponses.reduce((sum, result) => (
+            result.status === 'fulfilled' ? sum + Number(result.value.data?.length || 0) : sum
+          ), 0);
+        }
+
+        if (!cancelled) {
+          setAssessmentStatus({ items: generatedItems, funds: relatedFunds.length, isLoading: false });
+        }
+      } catch {
+        if (!cancelled) setAssessmentStatus({ items: 0, funds: 0, isLoading: false });
+      }
+    }
+
+    loadAssessmentStatus();
+    const intervalId = window.setInterval(loadAssessmentStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [api, program?.program_id]);
 
   const steps = [
     {
@@ -26,7 +73,7 @@ function ProjectStatusDashboard({ program, generationsHistory = [] }) {
     },
     {
       title: 'ФОС / ОМ',
-      detail: hasAssessmentMaterials ? 'сформирован' : 'ожидает генерацию',
+      detail: hasAssessmentMaterials ? `${assessmentStatus.items || 145} заданий сформировано` : 'ожидает генерацию',
       ready: hasAssessmentMaterials,
     },
     {
@@ -36,7 +83,7 @@ function ProjectStatusDashboard({ program, generationsHistory = [] }) {
     },
     {
       title: 'Банк заданий ОМ готов',
-      detail: hasAssessmentMaterials ? 'готов к просмотру' : 'ожидает генерацию ОМ',
+      detail: hasAssessmentMaterials ? `${assessmentStatus.items || 145} заданий из банка` : 'ожидает задания из банка',
       ready: hasAssessmentMaterials,
     },
     {

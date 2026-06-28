@@ -183,6 +183,11 @@ class AssessmentFundResponse(BaseModel):
     validation: AssessmentFundValidation
     created_at: str = ""
     updated_at: str = ""
+    created_by_name: str = ""
+    created_by_email: str = ""
+    reviewed_by_name: str = ""
+    reviewed_by_email: str = ""
+    reviewed_at: str = ""
 
 
 class AssessmentItemRead(BaseModel):

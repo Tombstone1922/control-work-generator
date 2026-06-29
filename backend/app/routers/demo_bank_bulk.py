@@ -11,6 +11,7 @@ from app.repositories import save_program
 from app.routers.programs import _analyze_program_text, _build_program_schema
 from app.security import get_current_user
 from app.services import demo_task_bank_service as bank_service
+from app.services.bulk_bank_fast_mode import bulk_fast_mode
 from app.services.document_parser import UnsupportedDocumentFormat, extract_text
 
 router = APIRouter(prefix="/api/demo-bank-bulk", tags=["demo-bank-bulk"])
@@ -65,25 +66,26 @@ async def bulk_upload_seed(
     ready = 0
     total_items = 0
 
-    for file in files:
-        original_name = file.filename or "program"
-        try:
-            program = await _upload_program_from_file(db, file, current_user.id)
-            summary = bank_service.ensure_bank(db, program, rebuild=True)
-            item = BulkBankItem(
-                filename=original_name,
-                program_id=program.id,
-                status="ready" if summary.get("ready") else "partial",
-                total_items=int(summary.get("total_items") or 0),
-                planned_items=int(summary.get("planned_items") or BANK_600_TOTAL),
-                persistent_path=str(summary.get("persistent_path") or ""),
-            )
-            if summary.get("ready"):
-                ready += 1
-            total_items += item.total_items
-            items.append(item)
-        except Exception as exc:
-            items.append(BulkBankItem(filename=original_name, status="error", error=str(exc)))
+    with bulk_fast_mode():
+        for file in files:
+            original_name = file.filename or "program"
+            try:
+                program = await _upload_program_from_file(db, file, current_user.id)
+                summary = bank_service.ensure_bank(db, program, rebuild=True)
+                item = BulkBankItem(
+                    filename=original_name,
+                    program_id=program.id,
+                    status="ready" if summary.get("ready") else "partial",
+                    total_items=int(summary.get("total_items") or 0),
+                    planned_items=int(summary.get("planned_items") or BANK_600_TOTAL),
+                    persistent_path=str(summary.get("persistent_path") or ""),
+                )
+                if summary.get("ready"):
+                    ready += 1
+                total_items += item.total_items
+                items.append(item)
+            except Exception as exc:
+                items.append(BulkBankItem(filename=original_name, status="error", error=str(exc)))
 
     failed = len([item for item in items if item.status == "error"])
     return BulkBankResponse(
@@ -99,7 +101,7 @@ async def bulk_upload_seed(
 def _activate_600_bank_profile() -> None:
     bank_service.SECTIONS = BANK_600_SECTIONS
     bank_service.TOTAL = BANK_600_TOTAL
-    bank_service.MODEL_VERSION = "prepared-system-bank-v4.0-600-context-qwen"
+    bank_service.MODEL_VERSION = "prepared-system-bank-v4.0-600-fast"
     bank_service.QWEN_BATCH_SIZE = max(getattr(bank_service, "QWEN_BATCH_SIZE", 5), 10)
 
 

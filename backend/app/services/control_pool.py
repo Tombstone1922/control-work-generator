@@ -6,7 +6,9 @@ from uuid import uuid4
 from app import models
 from app.schemas import ControlWorkVariant, GenerationRequest, Question
 
-BANK_DIR = Path(__file__).resolve().parents[2] / "storage" / "prepared_banks"
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+CONTROL_BANK_DIR = BACKEND_DIR / "storage" / "control_work_banks"
+PREPARED_BANK_DIR = BACKEND_DIR / "storage" / "prepared_banks"
 
 
 def make_variants(program: models.Program, payload: GenerationRequest) -> list[ControlWorkVariant]:
@@ -48,7 +50,7 @@ def read_questions(filename: str, wanted: list[str], difficulty: str) -> list[Qu
     for raw in raw_items:
         if not isinstance(raw, dict):
             continue
-        q_type = map_type(str(raw.get("assessment_type") or ""), str(raw.get("item_type") or ""))
+        q_type = map_type(str(raw.get("assessment_type") or raw.get("type") or ""), str(raw.get("item_type") or ""))
         if wanted_set and q_type not in wanted_set:
             continue
         text = str(raw.get("text") or "").strip()
@@ -69,14 +71,21 @@ def read_questions(filename: str, wanted: list[str], difficulty: str) -> list[Qu
 
 
 def read_bank(filename: str) -> dict | None:
-    BANK_DIR.mkdir(parents=True, exist_ok=True)
+    control_bank = _read_matching_bank(CONTROL_BANK_DIR, filename)
+    if control_bank:
+        return control_bank
+    return _read_matching_bank(PREPARED_BANK_DIR, filename)
+
+
+def _read_matching_bank(directory: Path, filename: str) -> dict | None:
+    directory.mkdir(parents=True, exist_ok=True)
     key = name_key(filename)
-    direct = BANK_DIR / f"{key}.json"
+    direct = directory / f"{key}.json"
     if direct.exists():
         data = read_json(direct)
         if data:
             return data
-    for path in sorted(BANK_DIR.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+    for path in sorted(directory.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
         data = read_json(path)
         if not data:
             continue
@@ -97,7 +106,7 @@ def read_json(path: Path) -> dict | None:
 def map_type(assessment_type: str, item_type: str) -> str:
     assessment_type = assessment_type.lower()
     item_type = item_type.lower()
-    if assessment_type in {"diagnostic", "test_bank"} or item_type == "single_choice":
+    if assessment_type in {"diagnostic", "test_bank", "test"} or item_type == "single_choice":
         return "test"
     if assessment_type in {"practice", "credit_practice", "exam_practice", "control_work", "laboratory"} or "practice" in item_type:
         return "practice"

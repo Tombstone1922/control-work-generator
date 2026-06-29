@@ -24,8 +24,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 UPLOAD_DIR = BACKEND_DIR / "storage" / "uploads"
 CONTROL_BANK_DIR = BACKEND_DIR / "storage" / "control_work_banks"
 EXPORT_DIR = BACKEND_DIR / "storage" / "exports"
-CONTROL_BANK_TOTAL = 50
-CONTROL_TYPES = ["open"] * 20 + ["practice"] * 20 + ["test"] * 10
+CONTROL_BANK_TOTAL = 100
+CONTROL_TYPES = ["open"] * 40 + ["practice"] * 40 + ["test"] * 20
 
 
 class ControlBankItem(BaseModel):
@@ -139,14 +139,14 @@ def _build_control_bank(program: models.Program) -> dict:
             "difficulty": question.difficulty,
             "answer": question.answer,
             "criteria": question.criteria,
-            "source_kind": "control_work_bank_50",
-            "source_context": f"Банк контрольных работ: 50 заданий по РПД {program.filename}.",
+            "source_kind": "control_work_bank_100",
+            "source_context": f"Банк контрольных работ: 100 заданий по РПД {program.filename}.",
             "status": "approved",
         })
     return {
         "schema_version": 1,
-        "bank_type": "control_work_50",
-        "model_version": "control-work-bank-v1.0-50",
+        "bank_type": "control_work_100",
+        "model_version": "control-work-bank-v1.0-100",
         "source_filename": program.filename,
         "bank_key": _name_key(program.filename),
         "program_id": program.id,

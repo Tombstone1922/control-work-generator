@@ -154,14 +154,14 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       <div className="authTabs demoModeTabs">
         <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
         <button className={mode === 'bulk' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('bulk')}>Массово 600</button>
-        <button className={mode === 'control50' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('control50')}>Контрольная 50</button>
+        <button className={mode === 'control50' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('control50')}>Контрольная 100</button>
         <button className={mode === 'work' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('work')}>Рабочий режим</button>
       </div>
 
       <div className="notice">
         <strong>{mode === 'control50' ? 'План банка контрольных работ:' : 'План банка под каждую РПД:'}</strong>{' '}
         {mode === 'control50'
-          ? '20 теоретических вопросов, 20 практических заданий, 10 тестовых вопросов. Итого 50 вопросов на каждую РПД.'
+          ? '40 теоретических вопросов, 40 практических заданий, 20 тестовых вопросов. Итого 100 вопросов на каждую РПД.'
           : '160 устных вопросов, 120 практических заданий, 120 вопросов к зачету, 80 практических заданий к зачету, 120 тестовых диагностических заданий. Итого 600 элементов.'}
       </div>
 
@@ -194,11 +194,11 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       {mode === 'control50' && (
         <div className="demoModeBlock">
           <h3>Банк контрольных работ</h3>
-          <p className="muted">Загрузите РПД одним набором. Для каждой РПД будет создан отдельный JSON-банк на 50 вопросов. Раздел “Генерация контрольной работы” сначала будет брать вопросы именно отсюда.</p>
+          <p className="muted">Загрузите РПД одним набором. Для каждой РПД будет создан отдельный JSON-банк на 100 вопросов. Раздел “Генерация контрольной работы” сначала будет брать вопросы именно отсюда.</p>
           <input className="fileInput" type="file" accept=".docx,.pdf,.txt" multiple onChange={(event) => setControlFiles(Array.from(event.target.files || []))} />
           <p className="muted">Выбрано файлов: <strong>{controlFiles.length}</strong></p>
           <div className="demoBankActions">
-            <button className="primary" type="button" onClick={controlSeedBank} disabled={isControlSeeding || !controlFiles.length}>{isControlSeeding ? 'Набиваем банк контрольных...' : 'Набить банк контрольных по 50'}</button>
+            <button className="primary" type="button" onClick={controlSeedBank} disabled={isControlSeeding || !controlFiles.length}>{isControlSeeding ? 'Набиваем банк контрольных...' : 'Набить банк контрольных по 100'}</button>
             <button className="download" type="button" onClick={downloadControlBanks} disabled={isDownloadingControl}>{isDownloadingControl ? 'Скачиваем архив...' : 'Скачать банк контрольных'}</button>
           </div>
           {controlSummary && <BulkBankSummary summary={controlSummary} title="Итог банка контрольных работ" />}

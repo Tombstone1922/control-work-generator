@@ -4,12 +4,16 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
   const [mode, setMode] = useState('seed');
   const [summary, setSummary] = useState(null);
   const [bulkSummary, setBulkSummary] = useState(null);
+  const [controlSummary, setControlSummary] = useState(null);
   const [bulkFiles, setBulkFiles] = useState([]);
+  const [controlFiles, setControlFiles] = useState([]);
   const [isSeeding, setSeeding] = useState(false);
   const [isBulkSeeding, setBulkSeeding] = useState(false);
+  const [isControlSeeding, setControlSeeding] = useState(false);
   const [isOpening, setOpening] = useState(false);
   const [isDownloadingCurrent, setDownloadingCurrent] = useState(false);
   const [isDownloadingAll, setDownloadingAll] = useState(false);
+  const [isDownloadingControl, setDownloadingControl] = useState(false);
 
   useEffect(() => {
     setSummary(null);
@@ -51,6 +55,25 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       setError(err.response?.data?.detail || 'Не удалось выполнить массовое наполнение банка.');
     } finally {
       setBulkSeeding(false);
+    }
+  }
+
+  async function controlSeedBank() {
+    if (!controlFiles.length) return setError('Выберите несколько РПД для банка контрольных работ.');
+    setControlSeeding(true);
+    setError('');
+    setSuccess('');
+    setControlSummary(null);
+    try {
+      const formData = new FormData();
+      controlFiles.forEach((file) => formData.append('files', file));
+      const response = await api.post('/api/control-bank/bulk-upload-seed', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setControlSummary(response.data);
+      setSuccess(`Банк контрольных работ готов: ${response.data.ready}/${response.data.total_files} РПД, всего ${response.data.total_items} вопросов.`);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось набить банк контрольных работ.');
+    } finally {
+      setControlSeeding(false);
     }
   }
 
@@ -108,6 +131,20 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
     }
   }
 
+  async function downloadControlBanks() {
+    setDownloadingControl(true);
+    setError('');
+    try {
+      const response = await api.get('/api/control-bank/download/all', { responseType: 'blob' });
+      downloadBlob(response.data, 'control_work_banks_all.zip');
+      setSuccess('Архив банка контрольных работ скачан.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось скачать банк контрольных работ.');
+    } finally {
+      setDownloadingControl(false);
+    }
+  }
+
   return (
     <section className="card quickGenerationCard">
       <p className="eyebrow">Демонстрационный режим защиты</p>
@@ -117,11 +154,15 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
       <div className="authTabs demoModeTabs">
         <button className={mode === 'seed' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('seed')}>Набор заданий</button>
         <button className={mode === 'bulk' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('bulk')}>Массово 600</button>
+        <button className={mode === 'control50' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('control50')}>Контрольная 50</button>
         <button className={mode === 'work' ? 'primary' : 'secondary'} type="button" onClick={() => setMode('work')}>Рабочий режим</button>
       </div>
 
       <div className="notice">
-        <strong>План банка под каждую РПД:</strong> 160 устных вопросов, 120 практических заданий, 120 вопросов к зачету, 80 практических заданий к зачету, 120 тестовых диагностических заданий. Итого 600 элементов.
+        <strong>{mode === 'control50' ? 'План банка контрольных работ:' : 'План банка под каждую РПД:'}</strong>{' '}
+        {mode === 'control50'
+          ? '20 теоретических вопросов, 20 практических заданий, 10 тестовых вопросов. Итого 50 вопросов на каждую РПД.'
+          : '160 устных вопросов, 120 практических заданий, 120 вопросов к зачету, 80 практических заданий к зачету, 120 тестовых диагностических заданий. Итого 600 элементов.'}
       </div>
 
       {mode === 'seed' && (
@@ -146,7 +187,21 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
             <button className="primary" type="button" onClick={bulkSeedBank} disabled={isBulkSeeding || !bulkFiles.length}>{isBulkSeeding ? 'Обрабатываем РПД по очереди...' : 'Запустить массовое наполнение'}</button>
             <button className="download" type="button" onClick={downloadAllBanks} disabled={isDownloadingAll}>{isDownloadingAll ? 'Скачиваем архив...' : 'Скачать весь банк'}</button>
           </div>
-          {bulkSummary && <BulkBankSummary summary={bulkSummary} />}
+          {bulkSummary && <BulkBankSummary summary={bulkSummary} title="Итог массового наполнения" />}
+        </div>
+      )}
+
+      {mode === 'control50' && (
+        <div className="demoModeBlock">
+          <h3>Банк контрольных работ</h3>
+          <p className="muted">Загрузите РПД одним набором. Для каждой РПД будет создан отдельный JSON-банк на 50 вопросов. Раздел “Генерация контрольной работы” сначала будет брать вопросы именно отсюда.</p>
+          <input className="fileInput" type="file" accept=".docx,.pdf,.txt" multiple onChange={(event) => setControlFiles(Array.from(event.target.files || []))} />
+          <p className="muted">Выбрано файлов: <strong>{controlFiles.length}</strong></p>
+          <div className="demoBankActions">
+            <button className="primary" type="button" onClick={controlSeedBank} disabled={isControlSeeding || !controlFiles.length}>{isControlSeeding ? 'Набиваем банк контрольных...' : 'Набить банк контрольных по 50'}</button>
+            <button className="download" type="button" onClick={downloadControlBanks} disabled={isDownloadingControl}>{isDownloadingControl ? 'Скачиваем архив...' : 'Скачать банк контрольных'}</button>
+          </div>
+          {controlSummary && <BulkBankSummary summary={controlSummary} title="Итог банка контрольных работ" />}
         </div>
       )}
 
@@ -167,10 +222,10 @@ function DemoBankPanel({ api, program, setError, setSuccess }) {
   );
 }
 
-function BulkBankSummary({ summary }) {
+function BulkBankSummary({ summary, title = 'Итог массового наполнения' }) {
   return (
     <div className="generationSummary demoBankSummary">
-      <strong>Итог массового наполнения</strong>
+      <strong>{title}</strong>
       <div className="itemBankStats">
         <span>РПД: <strong>{summary.total_files}</strong></span>
         <span>Готово: <strong>{summary.ready}</strong></span>

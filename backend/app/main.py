@@ -13,6 +13,7 @@ from app.routers import (
     assessment_items,
     auth,
     context_module,
+    control_bank,
     demo_bank,
     demo_bank_bulk,
     export,
@@ -80,6 +81,7 @@ app.include_router(context_module.router)
 app.include_router(local_llm.router)
 app.include_router(demo_bank.router)
 app.include_router(demo_bank_bulk.router)
+app.include_router(control_bank.router)
 app.include_router(export.router)
 
 
